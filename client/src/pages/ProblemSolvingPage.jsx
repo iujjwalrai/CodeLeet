@@ -1,14 +1,15 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import { 
   Play, Send, Clock, ChevronLeft, ChevronRight, 
-  Sun, Moon, Check, X, Zap, Settings 
+  Sun, Moon, Check, X, Zap, Settings, RefreshCcw
 } from "lucide-react";
 import Editor from "@monaco-editor/react";
 import axios from "../api/axios";
-import { useLocation } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
+import LogoutButton from "../components/Logout";
 const ProblemPage = ({ problemId = "1" }) => {
   const [isDark, setIsDark] = useState(true);
-  const [language, setLanguage] = useState("javascript");
+  const [language, setLanguage] = useState("java");
   const [code, setCode] = useState("");
   const [editorTheme, setEditorTheme] = useState("vs-dark");
   const [activeTab, setActiveTab] = useState("description");
@@ -32,7 +33,7 @@ const ProblemPage = ({ problemId = "1" }) => {
     const parts = location.pathname.split('/').filter(Boolean);
     return parts.length ? parts[parts.length - 1] : problemId;
   };
-
+  const navigate = useNavigate();
   useEffect(() => {
     const fetchProblem = async () => {
       const slug = slugFromPath();
@@ -42,10 +43,6 @@ const ProblemPage = ({ problemId = "1" }) => {
         const res = await axios.get(`/api/problems/${slug}`);
         setProblem(res.data);
         console.log(res.data);
-        if (res.data?.codeTemplates?.[language]?.starter) {
-          setCode(res.data.codeTemplates[language].starter);
-        }
-
       } catch (err) {
         setError(err?.response?.data?.message || err.message || 'Failed to load problem');
       } finally {
@@ -55,6 +52,16 @@ const ProblemPage = ({ problemId = "1" }) => {
 
     fetchProblem();
   }, [location.pathname]);
+
+  const storageKey = useMemo(()=>{
+    if(problem){
+      return `codeleet-${problem._id}-${language}`;
+    }
+    else{
+      return "null";
+    }
+
+  }, [problem, language]);
 
   // Timer effect
   useEffect(() => {
@@ -66,6 +73,40 @@ const ProblemPage = ({ problemId = "1" }) => {
     }
     return () => clearInterval(interval);
   }, [isTimerRunning]);
+
+
+  const handleLogout = async()=>{
+    const response = await axios.post("/api/auth/logout");
+    if(response.data.success){
+      navigate("/login");
+    }
+    else{
+      console.lof(res.data.message)
+    }
+  }
+
+
+  useEffect(()=>{
+    const savedCode = localStorage.getItem(storageKey);
+    if(savedCode!==null){
+      setCode(savedCode);
+    }
+    else{
+      setCode(problem?.codeTemplates?.[language]?.starter || "");
+    }
+  }, [storageKey, problem, language]);
+
+
+  useEffect(()=>{
+    const timer = setTimeout(()=>{
+      console.log("User has stopped typing")
+      localStorage.setItem(storageKey, code);
+    }, 2000);
+
+    return ()=>{
+      clearTimeout(timer);
+    }
+  }, [code, problem])
 
   const formatTime = (seconds) => {
     const hrs = Math.floor(seconds / 3600);
@@ -210,11 +251,8 @@ const ProblemPage = ({ problemId = "1" }) => {
   };
 
   const languageOptions = [
-    { value: "javascript", label: "JavaScript", monaco: "javascript" },
-    { value: "python", label: "Python", monaco: "python" },
     { value: "java", label: "Java", monaco: "java" },
     { value: "cpp", label: "C++", monaco: "cpp" },
-    { value: "typescript", label: "TypeScript", monaco: "typescript" }
   ];
 
   const themeOptions = [
@@ -350,6 +388,7 @@ const ProblemPage = ({ problemId = "1" }) => {
               >
                 {isDark ? <Sun size={18} className="text-amber-400" /> : <Moon size={18} className="text-slate-700" />}
               </button>
+              <LogoutButton onLogout={handleLogout}></LogoutButton>
             </div>
           </div>
         </div>
@@ -576,7 +615,7 @@ const ProblemPage = ({ problemId = "1" }) => {
                 <div className="flex items-center gap-3">
                   <select
                     value={language}
-                    onChange={(e)=>{const newLang = e.target.value; setLanguage(newLang); setCode(problem.codeTemplates[newLang].starter || "");}}
+                    onChange={(e)=>{const newLang = e.target.value; setLanguage(newLang);}}
                     className={`px-3 py-1.5 rounded-lg text-sm outline-none cursor-pointer transition-all ${
                       isDark 
                         ? "bg-slate-800 border border-slate-700 hover:border-slate-600" 
@@ -586,7 +625,7 @@ const ProblemPage = ({ problemId = "1" }) => {
                     {languageOptions.map(opt => (
                       <option key={opt.value} value={opt.value}>{opt.label}</option>
                     ))}
-                  </select>
+                  </select>                
 
                   <select
                     value={editorTheme}
@@ -601,8 +640,11 @@ const ProblemPage = ({ problemId = "1" }) => {
                       <option key={opt.value} value={opt.value}>{opt.label}</option>
                     ))}
                   </select>
+                  <button onClick={() => setCode(problem?.codeTemplates?.[language]?.starter)} className="bg-green-700 px-2 py-1 rounded hover:bg-red-700 transition-all duration-600">
+                    <RefreshCcw size={20} />
+                  </button>
+                  <div>Reset to the starter code</div>
                 </div>
-
                 <div className="flex items-center gap-2">
                   <span className={`text-xs ${isDark ? 'text-gray-500' : 'text-gray-600'}`}>CodeLeet Editor</span>
                 </div>

@@ -90,8 +90,18 @@ const getCurrentUser = async (req, res) => {
 };
 
 const logout = (req, res) => {
-  res.clearCookie(COOKIE_NAME);
-  res.json({ message: 'Logged out' });
+  try{
+    res.clearCookie(COOKIE_NAME);
+    res.json({ success: true, message: 'Logged out' });
+  }
+  catch(error){
+    console.error(error);
+    res.json({
+      success: false,
+      message: "Can't Logout now!"
+    })
+  }
+  
 };
 
 

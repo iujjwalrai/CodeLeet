@@ -76,7 +76,6 @@ function initWebSocket(server) {
       const {type, submissionId, status, tc, output, error, time, memory} = data;
 
       const entry = clients.get(jobId);
-      console.log("WS ENTRY FOUND:", !!entry, "JOB:", jobId);
       if(entry && entry.ws.readyState===WebSocket.OPEN){
         entry.ws.send(message);
       }

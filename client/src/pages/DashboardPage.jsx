@@ -3,6 +3,7 @@ import { Sun, Moon, TrendingUp, Code, Brain, GitBranch, Clock, Edit2, School, Ma
 import { useNavigate } from "react-router-dom";
 import axios from "../api/axios";
 import { useEffect } from "react";
+import LogoutButton from "../components/Logout";
 const DashboardPage = () => {
   const [isDark, setIsDark] = useState(true);
   const [isEditOpen, setIsEditOpen] = useState(false);
@@ -24,6 +25,16 @@ const DashboardPage = () => {
   useEffect(() => {
   getUserData();
 }, []);
+
+const handleLogout = async()=>{
+  const response = await axios.post("/api/auth/logout");
+  if(response.data.success){
+    navigate("/login");
+  }
+  else{
+    console.lof(res.data.message)
+  }
+}
 
 useEffect(() => {
   const fetchRecentSubmissions = async () => {
@@ -493,13 +504,26 @@ const timeAgo = (date) => {
           <h1 className="text-4xl font-bold bg-gradient-to-r from-purple-400 to-blue-400 bg-clip-text text-transparent">
             Dashboard
           </h1>
-          <button
-            onClick={() => setIsDark(!isDark)}
-            className={`p-3 rounded-xl ${isDark ? 'bg-gray-800 hover:bg-gray-700' : 'bg-white hover:bg-gray-100'} border ${isDark ? 'border-gray-700' : 'border-gray-200'} transition-all hover:scale-110`}
-            aria-label="Toggle theme"
-          >
-            {isDark ? <Sun size={24} className="text-yellow-400" /> : <Moon size={24} className="text-purple-600" />}
-          </button>
+          <div className="flex items-center gap-4">
+            <LogoutButton onLogout={handleLogout} />
+
+            <button
+              onClick={() => setIsDark(!isDark)}
+              className={`p-3 rounded-xl ${
+                isDark ? "bg-gray-800 hover:bg-gray-700" : "bg-white hover:bg-gray-100"
+              } border ${
+                isDark ? "border-gray-700" : "border-gray-200"
+              } transition-all hover:scale-110`}
+              aria-label="Toggle theme"
+            >
+              {isDark ? (
+                <Sun size={24} className="text-yellow-400" />
+              ) : (
+                <Moon size={24} className="text-purple-600" />
+              )}
+            </button>
+          </div>
+          
         </div>
 
         {/* Grid Layout */}
