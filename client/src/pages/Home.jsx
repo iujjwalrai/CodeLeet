@@ -2,37 +2,15 @@ import React from "react";
 import { motion } from "framer-motion";
 import { Code2, Zap, Shield, Terminal, ArrowRight, Trophy, Users, BookOpen } from "lucide-react";
 import { useNavigate } from "react-router-dom";
-
+import Navbar from "../components/Navbar";
+import { useAuth } from "../context/AuthContext";
 const Home = () => {
     const naviagte = useNavigate();
+    const {user} = useAuth();
   return (
     <div className="min-h-screen w-full bg-[#0A0A0A] text-white">
       {/* Navigation */}
-      <nav className="border-b border-white/10 bg-[#111111]/50 backdrop-blur-sm sticky top-0 z-50">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex justify-between items-center h-16">
-            <div className="flex items-center gap-2">
-              <Code2 className="text-purple-500" size={28} />
-              <span className="text-2xl font-bold">CodeLeet</span>
-            </div>
-            <div className="flex items-center gap-4">
-              <button className="text-gray-300 hover:text-white transition px-4 py-2">
-                Problems
-              </button>
-              <button className="text-gray-300 hover:text-white transition px-4 py-2">
-                Contests
-              </button>
-              <button className="text-gray-300 hover:text-white transition px-4 py-2">
-                Discuss
-              </button>
-              <button className="bg-purple-600 hover:bg-purple-700 transition px-6 py-2 rounded-xl font-medium" onClick={()=>naviagte("/login")}>
-                Sign In
-              </button>
-            </div>
-          </div>
-        </div>
-      </nav>
-
+      <Navbar/>
       {/* Hero Section */}
       <section className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-20 pb-32">
         <motion.div
@@ -51,7 +29,7 @@ const Home = () => {
             <motion.button
               whileHover={{ scale: 1.05 }}
               whileTap={{ scale: 0.95 }}
-              className="bg-purple-600 hover:bg-purple-700 transition px-8 py-4 rounded-xl font-medium text-lg flex items-center gap-2" onClick={()=>naviagte("/login")}
+              className="bg-purple-600 hover:bg-purple-700 transition px-8 py-4 rounded-xl font-medium text-lg flex items-center gap-2" onClick={()=>{if(user) naviagte("/dashboard"); else naviagte("/login")}}
             >
               Get Started
               <ArrowRight size={20} />
@@ -59,7 +37,7 @@ const Home = () => {
             <motion.button
               whileHover={{ scale: 1.05 }}
               whileTap={{ scale: 0.95 }}
-              className="bg-[#1A1A1A] hover:bg-[#242424] border border-white/10 transition px-8 py-4 rounded-xl font-medium text-lg"
+              className="bg-[#1A1A1A] hover:bg-[#242424] border border-white/10 transition px-8 py-4 rounded-xl font-medium text-lg" onClick={()=>naviagte("/problems")}
             >
               View Problems
             </motion.button>
@@ -112,7 +90,7 @@ const Home = () => {
       </section>
 
       {/* Stats Section */}
-      <section className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pb-32">
+      {/* <section className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pb-32">
         <motion.div
           initial={{ opacity: 0, y: 40 }}
           whileInView={{ opacity: 1, y: 0 }}
@@ -144,7 +122,7 @@ const Home = () => {
             </div>
           </div>
         </motion.div>
-      </section>
+      </section> */}
 
       {/* CTA Section */}
       <section className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pb-32">

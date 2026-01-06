@@ -7,7 +7,9 @@ import Editor from "@monaco-editor/react";
 import axios from "../api/axios";
 import { useLocation, useNavigate } from "react-router-dom";
 import LogoutButton from "../components/Logout";
+import { useAuth } from "../context/AuthContext";
 const ProblemPage = ({ problemId = "1" }) => {
+  const {setUser} = useAuth();
   const [isDark, setIsDark] = useState(true);
   const [language, setLanguage] = useState("java");
   const [code, setCode] = useState("");
@@ -78,6 +80,7 @@ const ProblemPage = ({ problemId = "1" }) => {
   const handleLogout = async()=>{
     const response = await axios.post("/api/auth/logout");
     if(response.data.success){
+      setUser(null);
       navigate("/login");
     }
     else{

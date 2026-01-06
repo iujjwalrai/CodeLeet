@@ -4,9 +4,12 @@ import { Eye, EyeOff, Chrome } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import {useForm} from "react-hook-form"
 import axios from "../api/axios"
+import { useAuth } from "../context/AuthContext";
+import Navbar from "../components/Navbar";
 const LoginPage = () => {
   const [showPassword, setShowPassword] = useState(false);
   const navigate = useNavigate();
+  const {setUser} = useAuth();
   const {
       register,
       handleSubmit,
@@ -24,14 +27,17 @@ const LoginPage = () => {
       console.log(data)
       const response = await axios.post("/api/auth/login", data);
       console.log(response.data);
-      if(response.data)
-      navigate("/dashboard");
+      if(response.data){
+        setUser(response.data.user);
+        navigate("/dashboard");
+      }
     }
     catch(e){
       console.error(e.response?.data || e.message);
     }
   }
-  return (
+  return (<div className="min-h-screen w-full bg-[#0A0A0A] text-white">
+    <Navbar/>
     <div className="min-h-screen w-full flex items-center justify-center bg-[#0A0A0A] px-4">
       <motion.div
         initial={{ opacity: 0, y: 40 }}
@@ -109,6 +115,7 @@ const LoginPage = () => {
           </span>
         </p>
       </motion.div>
+    </div>
     </div>
   );
 };

@@ -4,6 +4,7 @@ import { useNavigate } from "react-router-dom";
 import axios from "../api/axios";
 import { useEffect } from "react";
 import LogoutButton from "../components/Logout";
+import { useAuth } from "../context/AuthContext";
 const DashboardPage = () => {
   const [isDark, setIsDark] = useState(true);
   const [isEditOpen, setIsEditOpen] = useState(false);
@@ -11,7 +12,7 @@ const DashboardPage = () => {
   const [userData, setUserData] = useState({});
   const [heatmapData, setHeatmapData] = useState([]);
   const [recentSubmissions, setRecentSubmissions] = useState([]);
-
+  const {setUser} = useAuth();
   const navigate = useNavigate();
   const getUserData = async () => {
     try {
@@ -29,6 +30,7 @@ const DashboardPage = () => {
 const handleLogout = async()=>{
   const response = await axios.post("/api/auth/logout");
   if(response.data.success){
+    setUser(null);
     navigate("/login");
   }
   else{
