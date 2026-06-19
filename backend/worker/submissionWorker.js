@@ -6,9 +6,13 @@ const runPython = require("../docker/runPython");
 const runJava = require("../docker/runJava");
 const runJavaScript = require("../docker/runJavaScript");
 const runCpp = require("../docker/runCpp");
+const cache = require("../config/redis");
 
-function publishJobUpdate(jobId, data){
-  connectionPubSub.publish(`job-updates-submission:${jobId}`, JSON.stringify({ jobId, data }) );
+async function publishJobUpdate(jobId, data) {
+  const payload = JSON.stringify({ jobId, data });
+  const channel = `job-updates-submission:${jobId}`;
+  await cache.set(`job-cache:${channel}`, payload, "EX", 60);
+  connectionPubSub.publish(channel, payload);
 }
 
 const worker = new Worker(
@@ -72,31 +76,40 @@ const worker = new Worker(
       }
 
       console.log({
-        type:"SUBMIT",
+        type: "SUBMIT",
         submissionId,
         status: result.status,
+        passedCount: result.passedCount,
+        totalCount: result.totalCount,
         failedTestCase: result.failedTestCase,
+        failedTestCaseIndex: result.failedTestCaseIndex,
         output: result.output || "",
         error: result.error || "",
         time: result.time || 0,
         memory: result.memory || 0,
       })
 
-      publishJobUpdate(job.id,{
-        type:"SUBMIT",
+      publishJobUpdate(job.id, {
+        type: "SUBMIT",
         submissionId,
         status: result.status,
+        passedCount: result.passedCount,
+        totalCount: result.totalCount,
         failedTestCase: result.failedTestCase,
+        failedTestCaseIndex: result.failedTestCaseIndex,
         output: result.output || "",
         error: result.error || "",
         time: result.time || 0,
         memory: result.memory || 0,
       });
       return {
-        type:"SUBMIT",
+        type: "SUBMIT",
         submissionId,
         status: result.status,
+        passedCount: result.passedCount,
+        totalCount: result.totalCount,
         failedTestCase: result.failedTestCase,
+        failedTestCaseIndex: result.failedTestCaseIndex,
         output: result.output || "",
         error: result.error || "",
         time: result.time || 0,

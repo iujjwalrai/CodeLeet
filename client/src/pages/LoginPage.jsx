@@ -1,13 +1,15 @@
 import React, { useState } from "react";
 import { motion } from "framer-motion";
-import { Eye, EyeOff, Chrome } from "lucide-react";
+import { Eye, EyeOff, Chrome, Loader2 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import {useForm} from "react-hook-form"
 import axios from "../api/axios"
 import { useAuth } from "../context/AuthContext";
 import Navbar from "../components/Navbar";
+import toast from "react-hot-toast";
 const LoginPage = () => {
   const [showPassword, setShowPassword] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
   const navigate = useNavigate();
   const {setUser} = useAuth();
   const {
@@ -23,17 +25,21 @@ const LoginPage = () => {
 
 
   const onLogin = async(data)=>{
+    setIsLoading(true);
     try{
-      console.log(data)
       const response = await axios.post("/api/auth/login", data);
-      console.log(response.data);
       if(response.data){
         setUser(response.data.user);
+        toast.success("Welcome back! 🎉");
         navigate("/dashboard");
       }
     }
     catch(e){
-      console.error(e.response?.data || e.message);
+      const msg = e.response?.data?.message || e.message || "Login failed";
+      toast.error(msg);
+    }
+    finally{
+      setIsLoading(false);
     }
   }
   return (<div className="min-h-screen w-full bg-[#0A0A0A] text-white">
@@ -83,10 +89,16 @@ const LoginPage = () => {
           {/* Login Button */}
           <motion.button
             type="submit"
-            whileTap={{ scale: 0.95 }}
-            className="w-full bg-purple-600 hover:bg-purple-700 transition text-white p-3 rounded-xl font-medium mb-4"
+            disabled={isLoading}
+            whileTap={!isLoading ? { scale: 0.95 } : {}}
+            className="w-full bg-purple-600 hover:bg-purple-700 disabled:opacity-70 disabled:cursor-not-allowed transition text-white p-3 rounded-xl font-medium mb-4 flex items-center justify-center gap-2"
           >
-            Login
+            {isLoading ? (
+              <>
+                <Loader2 size={18} className="animate-spin" />
+                Logging in…
+              </>
+            ) : "Login"}
           </motion.button>
         </form>
         

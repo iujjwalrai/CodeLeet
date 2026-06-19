@@ -28,14 +28,25 @@ module.exports = async function runJava({
   fs.writeFileSync(path.join(workDir, "Solution.java"), userCode);
   fs.writeFileSync(path.join(workDir, "Main.java"), driverCode);
 
+  // Compile: workDir mounted rw so javac output (.class files) can be written back to the host.
   const compileCmd = `
 docker run --rm \
   --cpus="1.0" \
   --memory="256m" \
+  --memory-swap="256m" \
   --network none \
+  --pids-limit 64 \
+  --ulimit nproc=64:64 \
+  --ulimit nofile=64:64 \
+  --ulimit fsize=10485760 \
+  --cap-drop ALL \
+  --security-opt no-new-privileges \
+  --read-only \
+  --tmpfs /tmp:rw,nosuid,size=32m \
+  --user nobody \
   -v "${workDir}:/app" \
   codeleet-java \
-  sh -c "cd /app && javac Main.java Solution.java"
+  sh -c "cp /app/*.java /tmp/ && cd /tmp && javac Main.java Solution.java && cp /tmp/*.class /app/"
 `;
 
   const start = performance.now();
@@ -45,50 +56,86 @@ docker run --rm \
     await execPromise(compileCmd, 3000);
 
     /* ================= RUN TEST CASES ================= */
-    for (const tc of testCases) {
+    let passedCount = 0;
+    let failedTestCase = null;
+    let failedTestCaseIndex = -1;
+    let failedOutput = null;
+
+    for (let i = 0; i < testCases.length; i++) {
+      const tc = testCases[i];
+      // Run: workDir is read-only; copy compiled .class files into the tmpfs to execute.
       const runCmd = `
-        docker run --rm -i \
-          --cpus="1.0" \
-          --memory="256m" \
-          --network none \
-          -v "${workDir}:/app" \
-          codeleet-java \
-          sh -c "cd /app && java Main"
-        `;
+docker run --rm -i \
+  --cpus="1.0" \
+  --memory="256m" \
+  --memory-swap="256m" \
+  --network none \
+  --pids-limit 64 \
+  --ulimit nproc=64:64 \
+  --ulimit nofile=64:64 \
+  --ulimit fsize=10485760 \
+  --cap-drop ALL \
+  --security-opt no-new-privileges \
+  --read-only \
+  --tmpfs /tmp:rw,nosuid,size=32m \
+  --user nobody \
+  -v "${workDir}:/app:ro" \
+  codeleet-java \
+  sh -c "cp /app/*.class /tmp/ && cd /tmp && java -Xmx180m -Xss512k -XX:MaxMetaspaceSize=64m Main"
+`;
 
       const { stdout } = await execPromise(runCmd, 3000, tc.input);
 
-      if (stdout.trim() !== tc.output.trim()) {
-        cleanup(workDir);
-        return {
-          status: "wrong_answer",
-          output: stdout.trim(),
-          failedTestCase: tc,
-          error: `Expected: ${tc.output}, Got: ${stdout.trim()}`,
-          time: Math.round(performance.now() - start),
-        };
+      if (stdout.trim() === tc.output.trim()) {
+        passedCount++;
+      } else if (failedTestCase === null) {
+        // Record only the FIRST failure
+        failedTestCase = tc;
+        failedTestCaseIndex = i;
+        failedOutput = stdout.trim();
       }
     }
 
     cleanup(workDir);
-    return {
-      status: "accepted",
-      output: "All test cases passed",
-      error: null,
-      time: Math.round(performance.now() - start),
-    };
+
+    if (failedTestCase === null) {
+      return {
+        status: "accepted",
+        output: "All test cases passed",
+        passedCount: testCases.length,
+        totalCount: testCases.length,
+        error: null,
+        time: Math.round(performance.now() - start),
+      };
+    } else {
+      return {
+        status: "wrong_answer",
+        output: failedOutput,
+        passedCount,
+        totalCount: testCases.length,
+        failedTestCase,
+        failedTestCaseIndex,
+        error: `Expected: ${failedTestCase.output}, Got: ${failedOutput}`,
+        time: Math.round(performance.now() - start),
+      };
+    }
 
   } catch (err) {
     cleanup(workDir);
 
-    const msg = err.message || "";
+    const raw = err.message || "";
+    // Strip the "Command failed: \ndocker run ...\n\n" prefix — keep only compiler output
+    const cleanError = raw
+      .replace(/^Command failed:[\s\S]*?\n\n/, "") // remove up to first blank line
+      .replace(/^Command failed:[^\n]*\n?/, "")     // fallback: remove first line if no blank line
+      .trim();
 
     return {
-      status: msg.includes("javac")
+      status: cleanError.includes("javac") || cleanError.includes(".java") || raw.includes("javac")
         ? "compilation_error"
         : "runtime_error",
       output: null,
-      error: msg,
+      error: cleanError || "Unknown error",
       time: Math.round(performance.now() - start),
     };
   }

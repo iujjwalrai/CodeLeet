@@ -1,5 +1,7 @@
 FROM eclipse-temurin:17-jdk-alpine
 
-WORKDIR /app
+# Run as non-root. 'nobody' already exists in Alpine-based images.
+USER nobody
 
-CMD ["sh", "-c", "sleep infinity"]
+ENV HOME=/tmp
+WORKDIR /tmp

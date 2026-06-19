@@ -6,9 +6,14 @@ const runPython = require("../docker/runPython");
 const runJava = require("../docker/runJava");
 const runJavaScript = require("../docker/runJavaScript");
 const runCpp = require("../docker/runCpp");
+const cache = require("../config/redis"); // separate client for SET commands
 
-function publishJobUpdate(jobId, data){
-  connectionPubSub.publish(`job-updates:${jobId}`, JSON.stringify({ jobId, data }) );
+async function publishJobUpdate(jobId, data) {
+  const payload = JSON.stringify({ jobId, data });
+  const channel = `job-updates:${jobId}`;
+  // Cache latest status for 60s so late WebSocket subscribers can replay it
+  await cache.set(`job-cache:${channel}`, payload, "EX", 60);
+  connectionPubSub.publish(channel, payload);
 }
 const worker = new Worker(
   "run-queue",
@@ -62,14 +67,19 @@ const worker = new Worker(
 
       console.log({
         status: result.status,
+        passedCount: result.passedCount,
+        totalCount: result.totalCount,
         output: result.output || "",
         error: result.error || "",
         time: result.time || 0,
         memory: result.memory || 0,
       });
-      publishJobUpdate(job.id,{
+      publishJobUpdate(job.id, {
         status: result.status,
-        tc: result.tc,
+        passedCount: result.passedCount,
+        totalCount: result.totalCount,
+        failedTestCase: result.failedTestCase,
+        failedTestCaseIndex: result.failedTestCaseIndex,
         output: result.output || "",
         error: result.error || "",
         time: result.time || 0,
@@ -77,7 +87,10 @@ const worker = new Worker(
       });
       return {
         status: result.status,
-        tc: result.tc,
+        passedCount: result.passedCount,
+        totalCount: result.totalCount,
+        failedTestCase: result.failedTestCase,
+        failedTestCaseIndex: result.failedTestCaseIndex,
         output: result.output || "",
         error: result.error || "",
         time: result.time || 0,

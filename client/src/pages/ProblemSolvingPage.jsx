@@ -1,16 +1,15 @@
 import React, { useState, useEffect, useMemo } from "react";
-import { 
-  Play, Send, Clock, ChevronLeft, ChevronRight, 
-  Sun, Moon, Check, X, Zap, Settings, RefreshCcw
-} from "lucide-react";
+import { Play, Send, Clock, ChevronLeft, Check, X, Zap, RefreshCcw } from "lucide-react";
 import Editor from "@monaco-editor/react";
 import axios from "../api/axios";
 import { useLocation, useNavigate } from "react-router-dom";
 import LogoutButton from "../components/Logout";
 import { useAuth } from "../context/AuthContext";
+import toast from "react-hot-toast";
+import "./ProblemSolvingPage.css";
+
 const ProblemPage = ({ problemId = "1" }) => {
-  const {setUser} = useAuth();
-  const [isDark, setIsDark] = useState(true);
+  const { setUser } = useAuth();
   const [language, setLanguage] = useState("java");
   const [code, setCode] = useState("");
   const [editorTheme, setEditorTheme] = useState("vs-dark");
@@ -24,92 +23,64 @@ const ProblemPage = ({ problemId = "1" }) => {
   const [customInput, setCustomInput] = useState("");
   const [submissions, setSubmissions] = useState([]);
   const [submissionsLoading, setSubmissionsLoading] = useState(false);
-
   const location = useLocation();
   const [problem, setProblem] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
 
-  // derive slug/id from URL: /problem/:slug
   const slugFromPath = () => {
     const parts = location.pathname.split('/').filter(Boolean);
     return parts.length ? parts[parts.length - 1] : problemId;
   };
   const navigate = useNavigate();
+
   useEffect(() => {
     const fetchProblem = async () => {
       const slug = slugFromPath();
-      setLoading(true);
-      setError(null);
+      setLoading(true); setError(null);
       try {
         const res = await axios.get(`/api/problems/${slug}`);
         setProblem(res.data);
         console.log(res.data);
       } catch (err) {
         setError(err?.response?.data?.message || err.message || 'Failed to load problem');
-      } finally {
-        setLoading(false);
-      }
+      } finally { setLoading(false); }
     };
-
     fetchProblem();
   }, [location.pathname]);
 
-  const storageKey = useMemo(()=>{
-    if(problem){
-      return `codeleet-${problem._id}-${language}`;
-    }
-    else{
-      return "null";
-    }
-
+  const storageKey = useMemo(() => {
+    if (problem) return `codeleet-${problem._id}-${language}`;
+    else return "null";
   }, [problem, language]);
 
-  // Timer effect
   useEffect(() => {
     let interval;
-    if (isTimerRunning) {
-      interval = setInterval(() => {
-        setTimer(prev => prev + 1);
-      }, 1000);
-    }
+    if (isTimerRunning) interval = setInterval(() => setTimer(prev => prev + 1), 1000);
     return () => clearInterval(interval);
   }, [isTimerRunning]);
 
+  const handleLogout = async () => {
+    try {
+      const response = await axios.post("/api/auth/logout");
+      if (response.data.success) { setUser(null); navigate("/login"); }
+      else toast.error("Logout failed");
+    } catch (err) { toast.error("Logout failed"); }
+  };
 
-  const handleLogout = async()=>{
-    const response = await axios.post("/api/auth/logout");
-    if(response.data.success){
-      setUser(null);
-      navigate("/login");
-    }
-    else{
-      console.lof(res.data.message)
-    }
-  }
-
-
-  useEffect(()=>{
+  useEffect(() => {
     const savedCode = localStorage.getItem(storageKey);
-    if(savedCode!==null){
-      setCode(savedCode);
-    }
-    else{
-      setCode(problem?.codeTemplates?.[language]?.starter || "");
-    }
+    if (savedCode !== null) setCode(savedCode);
+    else setCode(problem?.codeTemplates?.[language]?.starter || "");
   }, [storageKey, problem, language]);
 
-
-  useEffect(()=>{
-    const timer = setTimeout(()=>{
-      console.log("User has stopped typing")
+  useEffect(() => {
+    const t = setTimeout(() => {
+      console.log("User has stopped typing");
       localStorage.setItem(storageKey, code);
     }, 2000);
-
-    return ()=>{
-      clearTimeout(timer);
-    }
-  }, [code, problem])
+    return () => clearTimeout(t);
+  }, [code, problem]);
 
   const formatTime = (seconds) => {
     const hrs = Math.floor(seconds / 3600);
@@ -121,691 +92,338 @@ const ProblemPage = ({ problemId = "1" }) => {
   const fetchMySubmissions = async () => {
     try {
       setSubmissionsLoading(true);
-      const res = await axios.get("/api/submissions/me", {
-        params: { problemId: problem._id, limit: 10 },
-      });
+      const res = await axios.get("/api/submissions/me", { params: { problemId: problem._id, limit: 10 } });
       setSubmissions(res.data);
-    } catch (err) {
-      console.error("Failed to load submissions", err);
-    } finally {
-      setSubmissionsLoading(false);
-    }
+    } catch (err) { console.error("Failed to load submissions", err); }
+    finally { setSubmissionsLoading(false); }
   };
 
   const handleRun = async () => {
     try {
-      console.log({
-        problemId: problem._id,
-        language,
-        code,
-        customInput,
-      })
-      const response = await axios.post("/api/submissions/run", {
-        problemId: problem._id,
-        language,
-        code,
-        customInput,
-      });
-      // handle response if needed
+      console.log({ problemId: problem._id, language, code, customInput });
+      const response = await axios.post("/api/submissions/run", { problemId: problem._id, language, code, customInput });
       console.log(response.data);
       const ws = new WebSocket(import.meta.env.VITE_API_BASE_URL_WS);
-      ws.onopen = ()=>{
-        ws.send(JSON.stringify({
-          type: "RUN",
-          jobId: response.data.jobId
-        }))
-      }
+      ws.onopen = () => { ws.send(JSON.stringify({ type: "RUN", jobId: response.data.jobId })); };
       console.log("subscribed");
-      ws.onmessage = (event)=>{
+      ws.onmessage = (event) => {
         const msg = JSON.parse(event.data);
         console.log("WebSocket message:", msg);
         const data = msg.data;
-        setRunStatus(data.status);
-        setRunData(data);
+        setRunStatus(data.status); setRunData(data);
         if (data.status === "accepted") {
-          setTestResults([
-            {
-              type: "accepted",
-              time: `${data.time} ms`,
-            },
-          ]);
-          ws.close();
-          return;
+          setTestResults([{ type: "accepted", passedCount: data.passedCount ?? data.totalCount, totalCount: data.totalCount, time: `${data.time} ms` }]);
+          ws.close(); return;
         }
-
         if (data.status === "wrong_answer") {
-          setTestResults([
-            {
-              type: "wrong_answer",
-              input: data.tc?.input || "—",
-              expected: data.tc?.output || "—",
-              output: data.output || "—",
-              time: `${data.time} ms`,
-            },
-          ]);
-          ws.close();
-          return;
+          setTestResults([{ type: "wrong_answer", passedCount: data.passedCount ?? 0, totalCount: data.totalCount ?? 0, failedIndex: (data.failedTestCaseIndex ?? 0) + 1, input: data.failedTestCase?.input || "—", expected: data.failedTestCase?.output || "—", output: data.output || "—", time: `${data.time} ms` }]);
+          ws.close(); return;
         }
-
         if (data.status === "compilation_error") {
-          setTestResults([
-            {
-              type: "compilation_error",
-              error: data.error,
-              time: `${data.time} ms`,
-            },
-          ]);
-          ws.close();
-          return;
+          setTestResults([{ type: "compilation_error", error: data.error, time: `${data.time} ms` }]);
+          ws.close(); return;
         }
-
         if (data.status === "runtime_error") {
-          setTestResults([
-            {
-              type: "runtime_error",
-              error: data.error,
-              time: `${data.time} ms`,
-            },
-          ]);
+          setTestResults([{ type: "runtime_error", error: data.error, time: `${data.time} ms` }]);
           ws.close();
         }
-      }
-
-    } catch (error) {
-      console.error("Run error:", error);
-    }
+      };
+    } catch (error) { toast.error("Failed to run code. Please try again."); }
   };
 
-
   const handleSubmit = async () => {
-    try{
-      console.log({
-        problemId: problem._id,
-        language,
-        code
-      });
-
-      const response = await axios.post("/api/submissions/", {
-        problemId: problem._id,
-        language,
-        code
-      });
-
+    try {
+      console.log({ problemId: problem._id, language, code });
+      const response = await axios.post("/api/submissions/", { problemId: problem._id, language, code });
       console.log(response.data);
-
       const ws = new WebSocket(import.meta.env.VITE_API_BASE_URL_WS);
-      ws.onopen = ()=>{
-        ws.send(JSON.stringify({
-          type: "SUBMIT",
-          jobId: response.data.jobId
-        }))
-      }
+      ws.onopen = () => { ws.send(JSON.stringify({ type: "SUBMIT", jobId: response.data.jobId })); };
       console.log("subscribed for submission");
-      ws.onmessage = (event)=>{
+      ws.onmessage = (event) => {
         const msg = JSON.parse(event.data);
-        console.log(msg);
         setSubmitData(msg.data);
-        setActiveTab("result");
-      }
-    }
-    catch(error){
-      console.error("Submit Error ", error);
-    }
+        const finalStatuses = ["accepted", "wrong_answer", "compilation_error", "runtime_error"];
+        if (finalStatuses.includes(msg.data.status)) {
+          if (msg.data.status === "accepted") toast.success("✅ Submission Accepted!");
+          else toast.error("❌ " + msg.data.status.replace(/_/g, " ").replace(/\b\w/g, c => c.toUpperCase()));
+          setActiveTab("result");
+        }
+      };
+    } catch (error) { toast.error("Submission failed. Please try again."); }
   };
 
   const languageOptions = [
     { value: "java", label: "Java", monaco: "java" },
     { value: "cpp", label: "C++", monaco: "cpp" },
   ];
-
   const themeOptions = [
     { value: "vs-dark", label: "Dark" },
     { value: "vs-light", label: "Light" },
-    { value: "hc-black", label: "High Contrast" }
+    { value: "hc-black", label: "High Contrast" },
   ];
 
-  const difficultyColor = () => {
-    if (!problem) return isDark ? "text-gray-400" : "text-gray-500";
-    if (problem.difficulty === "Easy") return isDark ? "text-emerald-400" : "text-emerald-600";
-    if (problem.difficulty === "Medium") return isDark ? "text-amber-400" : "text-amber-600";
-    return isDark ? "text-rose-400" : "text-rose-600";
-  };
+  if (loading) return (
+    <div className="ps-fullscreen-center">
+      <div className="ps-spinner" />
+      <span style={{ color: "#64748b", fontSize: 13 }}>Loading problem…</span>
+    </div>
+  );
+  if (error) return (
+    <div className="ps-fullscreen-center">
+      <span style={{ color: "#ef4444", fontSize: 14 }}>{error}</span>
+    </div>
+  );
+  if (!problem) return (
+    <div className="ps-fullscreen-center">
+      <span style={{ color: "#64748b" }}>Problem not found.</span>
+    </div>
+  );
 
-  if (loading) {
-    return (
-      <div className={`min-h-screen flex items-center justify-center ${isDark ? 'bg-slate-900 text-white' : 'bg-white text-gray-900'}`}>
-        <div className="text-center">
-          <div className="animate-pulse mb-4">Loading problem…</div>
-          <div className="text-sm text-gray-400">CodeLeet is making arrangements</div>
-        </div>
-      </div>
-    );
-  }
-
-  if (error) {
-    return (
-      <div className={`min-h-screen flex items-center justify-center ${isDark ? 'bg-slate-900 text-white' : 'bg-white text-gray-900'}`}>
-        <div className="text-center">
-          <div className="mb-4">Error loading problem</div>
-          <div className="text-sm text-red-400">{error}</div>
-        </div>
-      </div>
-    );
-  }
-
-  if (!problem) {
-    return (
-      <div className={`min-h-screen flex items-center justify-center ${isDark ? 'bg-slate-900 text-white' : 'bg-white text-gray-900'}`}>
-        <div className="text-center">Problem not found.</div>
-      </div>
-    );
-  }
+  const diffCls = `ps-diff ps-diff-${problem.difficulty}`;
 
   return (
-    <div className={`min-h-screen transition-colors duration-300 ${isDark ? "bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 text-white" : "bg-gradient-to-br from-gray-50 via-white to-gray-50 text-gray-900"}`}>
-      {/* Background Effects */}
-      <div className="fixed inset-0 overflow-hidden pointer-events-none">
-        <div className={`absolute top-20 left-20 w-96 h-96 ${isDark ? 'bg-purple-500/5' : 'bg-purple-200/20'} rounded-full blur-3xl`}></div>
-        <div className={`absolute bottom-20 right-20 w-96 h-96 ${isDark ? 'bg-blue-500/5' : 'bg-blue-200/20'} rounded-full blur-3xl`}></div>
-      </div>
-
-      {/* Header */}
-      <div className={`relative border-b ${isDark ? 'border-slate-800 bg-slate-900/50' : 'border-gray-200 bg-white/50'} backdrop-blur-sm sticky top-0 z-50`}>
-        <div className="max-w-[1800px] mx-auto px-6 py-4">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-4">
-              <button 
-                onClick={() => window.history.back()}
-                className={`p-2 rounded-lg transition-all ${isDark ? 'hover:bg-slate-800' : 'hover:bg-gray-100'}`}
-              >
-                <ChevronLeft size={20} />
-              </button>
-              
-              <div>
-                <div className="flex items-center gap-3">
-                  <h1 className="text-xl font-bold bg-gradient-to-r from-purple-400 to-blue-400 bg-clip-text text-transparent">
-                    {problem.title}
-                  </h1>
-                  <span className={`px-3 py-1 rounded-full text-xs font-semibold ${
-                    problem.difficulty === "Easy" 
-                      ? isDark ? "bg-emerald-500/10 text-emerald-400" : "bg-emerald-50 text-emerald-600"
-                      : problem.difficulty === "Medium"
-                      ? isDark ? "bg-amber-500/10 text-amber-400" : "bg-amber-50 text-amber-600"
-                      : isDark ? "bg-rose-500/10 text-rose-400" : "bg-rose-50 text-rose-600"
-                  }`}>
-                    {problem.difficulty}
-                  </span>
-                </div>
-                <p className={`text-xs mt-1 ${isDark ? 'text-gray-500' : 'text-gray-500'}`}>Problem #{problem.id}</p>
-              </div>
-            </div>
-
-            <div className="flex items-center gap-3">
-              <div className={`flex items-center gap-3 px-4 py-2 rounded-xl ${isDark ? 'bg-slate-800 border border-slate-700' : 'bg-white border border-gray-200'}`}>
-                <Clock size={18} className={isTimerRunning ? "text-blue-400" : isDark ? "text-gray-400" : "text-gray-500"} />
-                <span className="font-mono text-sm">{formatTime(timer)}</span>
-                <button
-                  onClick={() => {
-                    if (isTimerRunning) {
-                      setIsTimerRunning(false);
-                    } else {
-                      setTimer(0);
-                      setIsTimerRunning(true);
-                    }
-                  }}
-                  className={`px-3 py-1 rounded-lg text-xs font-medium transition-all ${
-                    isTimerRunning 
-                      ? "bg-rose-500 hover:bg-rose-600 text-white" 
-                      : "bg-gradient-to-r from-purple-500 to-blue-500 hover:from-purple-600 hover:to-blue-600 text-white"
-                  }`}
-                >
-                  {isTimerRunning ? "Stop" : "Start"}
-                </button>
-              </div>
-
-              <button
-                onClick={handleRun}
-                disabled={runStatus === "Running"}
-                className={`flex items-center gap-2 px-4 py-2 rounded-xl font-medium transition-all ${
-                  isDark 
-                    ? "bg-slate-800 hover:bg-slate-700 border border-slate-700" 
-                    : "bg-white hover:bg-gray-50 border border-gray-200"
-                } disabled:opacity-50`}
-              >
-                <Play size={16} />
-                Run
-              </button>
-
-              <button
-                onClick={handleSubmit}
-                disabled={runStatus === "Running"}
-                className="flex items-center gap-2 px-4 py-2 rounded-xl font-medium bg-gradient-to-r from-purple-500 to-blue-500 hover:from-purple-600 hover:to-blue-600 text-white transition-all disabled:opacity-50"
-              >
-                <Send size={16} />
-                Submit
-              </button>
-
-              <button
-                onClick={() => setIsDark(!isDark)}
-                className={`p-2 rounded-xl transition-all ${isDark ? 'bg-slate-800 hover:bg-slate-700 border border-slate-700' : 'bg-white hover:bg-gray-50 border border-gray-200'}`}
-              >
-                {isDark ? <Sun size={18} className="text-amber-400" /> : <Moon size={18} className="text-slate-700" />}
-              </button>
-              <LogoutButton onLogout={handleLogout}></LogoutButton>
-            </div>
+    <div className="ps-page">
+      {/* ── HEADER ── */}
+      <div className="ps-header">
+        <div className="ps-header-left">
+          <button className="ps-back" onClick={() => window.history.back()}><ChevronLeft size={18} /></button>
+          <span className="ps-title">{problem.title}</span>
+          <span className={diffCls}>{problem.difficulty}</span>
+          <span className="ps-id">#{problem.id}</span>
+        </div>
+        <div className="ps-header-right">
+          <div className="ps-timer">
+            <Clock size={14} style={{ color: isTimerRunning ? "#3b82f6" : "#475569" }} />
+            <span>{formatTime(timer)}</span>
+            <button className={`ps-timer-btn ${isTimerRunning ? "ps-timer-btn-stop" : "ps-timer-btn-start"}`}
+              onClick={() => { if (isTimerRunning) setIsTimerRunning(false); else { setTimer(0); setIsTimerRunning(true); } }}>
+              {isTimerRunning ? "Stop" : "Start"}
+            </button>
           </div>
+          <button className="ps-btn ps-btn-run" onClick={handleRun} disabled={runStatus === "Running"}>
+            <Play size={14} /> Run
+          </button>
+          <button className="ps-btn ps-btn-submit" onClick={handleSubmit} disabled={runStatus === "Running"}>
+            <Send size={14} /> Submit
+          </button>
+          <LogoutButton onLogout={handleLogout} />
         </div>
       </div>
 
-      {/* Main Content */}
-      <div className="relative max-w-[1800px] mx-auto">
-        <div className="grid grid-cols-2 gap-0 h-[calc(100vh-80px)]">
-          {/* Left Panel - Problem Description */}
-          <div className={`border-r overflow-y-auto ${isDark ? 'border-slate-800' : 'border-gray-200'}`}>
-            <div className="p-6">
-              {/* Tabs */}
-              <div className={`flex gap-2 mb-6 border-b ${isDark ? 'border-slate-800' : 'border-gray-200'}`}>
-                {["description", "submissions", "result"].map((tab) => (
-                  <button
-                    key={tab}
-                    onClick={() => {setActiveTab(tab); if (tab==="submissions") fetchMySubmissions()}}
-                    className={`px-4 py-2 text-sm font-medium transition-all capitalize ${
-                      activeTab === tab
-                        ? `border-b-2 ${isDark ? 'border-purple-400 text-purple-400' : 'border-purple-500 text-purple-600'}`
-                        : isDark ? 'text-gray-400 hover:text-gray-300' : 'text-gray-600 hover:text-gray-900'
-                    }`}
-                  >
-                    {tab}
-                  </button>
-                ))}
-              </div>
+      {/* ── MAIN SPLIT ── */}
+      <div className="ps-main">
+        {/* ── LEFT PANEL ── */}
+        <div className="ps-left">
+          <div className="ps-tabs">
+            {["description", "submissions", "result"].map(tab => (
+              <button key={tab}
+                className={`ps-tab ${activeTab === tab ? "ps-tab-active" : ""}`}
+                onClick={() => { setActiveTab(tab); if (tab === "submissions") fetchMySubmissions(); }}>
+                {tab}
+              </button>
+            ))}
+          </div>
+          <div className="ps-content">
+            {/* DESCRIPTION TAB */}
+            {activeTab === "description" && <>
+              <h2 className="ps-section-title">Description</h2>
+              <p className="ps-desc">{problem.description}</p>
 
-              {activeTab === "description" && (
-                <div className="space-y-6">
-                  {/* Description */}
-                  <div>
-                    <h2 className="text-lg font-semibold mb-3">Description</h2>
-                    <p className={`leading-relaxed ${isDark ? 'text-gray-300' : 'text-gray-700'}`}>
-                      {problem.description}
-                    </p>
-                  </div>
-
-                  {/* Examples */}
-                  <div>
-                    <h2 className="text-lg font-semibold mb-3">Examples</h2>
-                    <div className="space-y-4">
-                      {problem.examples.map((example, idx) => (
-                        <div key={idx} className={`p-4 rounded-xl ${isDark ? 'bg-slate-800/50 border border-slate-700/50' : 'bg-gray-50 border border-gray-200'}`}>
-                          <div className="space-y-2">
-                            <div>
-                              <span className={`text-sm font-semibold ${isDark ? 'text-gray-400' : 'text-gray-600'}`}>Input:</span>
-                              <pre className={`mt-1 font-mono text-sm ${isDark ? 'text-blue-400' : 'text-blue-600'}`}>{example.input}</pre>
-                            </div>
-                            <div>
-                              <span className={`text-sm font-semibold ${isDark ? 'text-gray-400' : 'text-gray-600'}`}>Output:</span>
-                              <pre className={`mt-1 font-mono text-sm ${isDark ? 'text-emerald-400' : 'text-emerald-600'}`}>{example.output}</pre>
-                            </div>
-                            <div>
-                              <span className={`text-sm font-semibold ${isDark ? 'text-gray-400' : 'text-gray-600'}`}>Explanation:</span>
-                              <p className={`mt-1 text-sm ${isDark ? 'text-gray-300' : 'text-gray-700'}`}>{example.explanation}</p>
-                            </div>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-
-                  {/* Constraints */}
-                  <div>
-                    <h2 className="text-lg font-semibold mb-3">Constraints</h2>
-                    <ul className={`space-y-2 ${isDark ? 'text-gray-300' : 'text-gray-700'}`}>
-                      {problem.constraints.map((constraint, idx) => (
-                        <li key={idx} className="flex items-start gap-2">
-                          <span className="text-purple-400 mt-1">•</span>
-                          <span className="text-sm font-mono">{constraint}</span>
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
+              <h2 className="ps-section-title">Examples</h2>
+              {problem.examples.map((ex, i) => (
+                <div key={i} className="ps-example">
+                  <div className="ps-example-label">Input</div>
+                  <pre className="ps-example-val ps-example-val-input">{ex.input}</pre>
+                  <div className="ps-example-label" style={{ marginTop: 10 }}>Output</div>
+                  <pre className="ps-example-val ps-example-val-output">{ex.output}</pre>
+                  <div className="ps-example-label" style={{ marginTop: 10 }}>Explanation</div>
+                  <p className="ps-example-val ps-example-val-explain">{ex.explanation}</p>
                 </div>
-              )}
-              {activeTab === "submissions" && (
-                <div className="space-y-3">
+              ))}
 
-                  {submissionsLoading && (
-                    <div className={`text-center py-6 ${isDark ? "text-gray-500" : "text-gray-400"}`}>
-                      Loading submissions…
-                    </div>
-                  )}
+              <h2 className="ps-section-title">Constraints</h2>
+              <ul className="ps-constraints">
+                {problem.constraints.map((c, i) => <li key={i} className="ps-constraint">{c}</li>)}
+              </ul>
+            </>}
 
-                  {!submissionsLoading && submissions.length === 0 && (
-                    <div className={`text-center py-6 ${isDark ? "text-gray-500" : "text-gray-400"}`}>
-                      No submissions yet
-                    </div>
-                  )}
-
-                  {submissions.map((sub) => (
-                    <button
-                      key={sub._id}
-                      onClick={() => {
-                        setSubmitData(sub);
-                        setActiveTab("result");
-                      }}
-                      className={`w-full text-left p-4 rounded-xl border transition-all ${
-                        sub.status === "accepted"
-                          ? isDark
-                            ? "bg-emerald-500/5 border-emerald-500/20 hover:bg-emerald-500/10"
-                            : "bg-emerald-50 border-emerald-200"
-                          : isDark
-                            ? "bg-slate-800/50 border-slate-700 hover:bg-slate-800"
-                            : "bg-gray-50 border-gray-200"
-                      }`}
-                    >
-                      <div className="flex items-center justify-between">
-                        <span
-                          className={`text-sm font-semibold ${
-                            sub.status === "accepted"
-                              ? "text-emerald-400"
-                              : sub.status === "wrong_answer"
-                                ? "text-rose-400"
-                                : "text-yellow-400"
-                          }`}
-                        >
-                          {sub.status.replace("_", " ").toUpperCase()}
-                        </span>
-
-                        <span className="text-xs text-gray-500">
-                          {new Date(sub.createdAt).toLocaleString()}
-                        </span>
-                      </div>
-                    </button>
-                  ))}
+            {/* SUBMISSIONS TAB */}
+            {activeTab === "submissions" && <>
+              {submissionsLoading && <div className="ps-empty">Loading submissions…</div>}
+              {!submissionsLoading && submissions.length === 0 && <div className="ps-empty">No submissions yet</div>}
+              {submissions.map(sub => (
+                <div key={sub._id}
+                  className={`ps-sub-item ${sub.status === "accepted" ? "ps-sub-item-accepted" : ""}`}
+                  onClick={() => { setSubmitData(sub); setActiveTab("result"); }}>
+                  <span style={{ fontSize: 13, fontWeight: 600, color: sub.status === "accepted" ? "#22c55e" : sub.status === "wrong_answer" ? "#ef4444" : "#f59e0b" }}>
+                    {sub.status.replace("_", " ").toUpperCase()}
+                  </span>
+                  <span style={{ fontSize: 11, color: "#475569" }}>{new Date(sub.createdAt).toLocaleString()}</span>
                 </div>
-              )}
+              ))}
+            </>}
 
+            {/* RESULT TAB */}
+            {activeTab === "result" && <>
+              {!submitData ? (
+                <div className="ps-empty" style={{ padding: "48px 0" }}>No submission yet</div>
+              ) : (
+                <div className={`ps-verdict-box ${submitData.status === "accepted" ? "ps-card-accepted" :
+                  submitData.status === "wrong_answer" ? "ps-card-wrong" : ""
+                  }`} style={{
+                    borderColor: submitData.status === "accepted" ? "rgba(34,197,94,0.2)" :
+                      submitData.status === "wrong_answer" ? "rgba(239,68,68,0.2)" : "rgba(245,158,11,0.2)",
+                    background: submitData.status === "accepted" ? "rgba(34,197,94,0.04)" :
+                      submitData.status === "wrong_answer" ? "rgba(239,68,68,0.04)" : "rgba(245,158,11,0.04)"
+                  }}>
+                  <div className="ps-verdict-title" style={{
+                    color: submitData.status === "accepted" ? "#22c55e" :
+                      submitData.status === "wrong_answer" ? "#ef4444" : "#f59e0b"
+                  }}>
+                    {(submitData?.status || "processing").replace("_", " ").toUpperCase()}
+                  </div>
+                  <div className="ps-meta" style={{ justifyContent: "center", marginBottom: 14 }}>
+                    {submitData.time != null && <span>⏱ {submitData.time} ms</span>}
+                    {submitData.memory != null && <span>💾 {submitData.memory} KB</span>}
+                  </div>
 
-              {activeTab === "result" && (
-                <div className="p-6">
-
-                  {!submitData ? (
-                    <div className={`text-center py-10 ${isDark ? "text-gray-500" : "text-gray-400"}`}>
-                      <p>No latest submission yet</p>
+                  {submitData.status === "accepted" && submitData.passedCount != null && <>
+                    <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12, marginBottom: 4 }}>
+                      <span style={{ color: "#64748b" }}>Test Cases Passed</span>
+                      <span style={{ color: "#22c55e", fontWeight: 700 }}>{submitData.passedCount} / {submitData.totalCount}</span>
                     </div>
-                  ) : (
-                    <div
-                      className={`max-w-xl mx-auto p-5 rounded-xl border ${
-                        submitData.status === "accepted"
-                          ? isDark
-                            ? "bg-emerald-500/5 border-emerald-500/20"
-                            : "bg-emerald-50 border-emerald-200"
-                          : submitData.status === "wrong_answer"
-                            ? isDark
-                              ? "bg-rose-500/5 border-rose-500/20"
-                              : "bg-rose-50 border-rose-200"
-                            : isDark
-                              ? "bg-yellow-500/5 border-yellow-500/20"
-                              : "bg-yellow-50 border-yellow-200"
-                      }`}
-                    >
-                      {/* ===== VERDICT ===== */}
-                      <div className="text-center mb-4">
-                        <p
-                          className={`text-lg font-semibold ${
-                            submitData.status === "accepted"
-                              ? "text-emerald-400"
-                              : submitData.status === "wrong_answer"
-                                ? "text-rose-400"
-                                : "text-yellow-400"
-                          }`}
-                        >
-                          {(submitData?.status || "processing")
-                            .replace("_", " ")
-                            .toUpperCase()}
-                        </p>
+                    <div className="ps-progress"><div className="ps-progress-fill ps-progress-green" style={{ width: "100%" }} /></div>
+                    <p style={{ textAlign: "center", color: "#22c55e", fontSize: 13, marginTop: 8 }}>All test cases passed 🎉</p>
+                  </>}
+
+                  {submitData.status === "wrong_answer" && <>
+                    {submitData.passedCount != null && <>
+                      <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12, marginBottom: 4 }}>
+                        <span style={{ color: "#64748b" }}>Test Cases Passed</span>
+                        <span style={{ color: "#ef4444", fontWeight: 700 }}>{submitData.passedCount} / {submitData.totalCount}</span>
                       </div>
-
-                      {/* ===== META ===== */}
-                      <div className="flex justify-center gap-6 text-xs mb-4">
-                        {submitData.time != null && <span>⏱ {submitData.time} ms</span>}
-                        {submitData.memory != null && <span>💾 {submitData.memory} KB</span>}
+                      <div className="ps-progress"><div className="ps-progress-fill ps-progress-red" style={{ width: `${(submitData.passedCount / submitData.totalCount) * 100}%` }} /></div>
+                    </>}
+                    {submitData.failedTestCaseIndex != null && (
+                      <div style={{ display: "inline-block", padding: "3px 8px", borderRadius: 4, background: "rgba(239,68,68,0.1)", color: "#f87171", fontSize: 12, margin: "8px 0" }}>
+                        ❌ Failed on Test Case #{submitData.failedTestCaseIndex + 1}
                       </div>
+                    )}
+                    {submitData.failedTestCase && <>
+                      <div className="ps-detail-row"><b>Input: </b><span>{submitData.failedTestCase.input}</span></div>
+                      <div className="ps-detail-row"><b>Expected: </b><span>{submitData.failedTestCase.output}</span></div>
+                      <div className="ps-detail-row"><b>Output: </b><span>{submitData.output}</span></div>
+                    </>}
+                  </>}
 
-                      {/* ===== ACCEPTED ===== */}
-                      {submitData.status === "accepted" && (
-                        <p className="text-center text-sm text-emerald-400">
-                          All test cases passed 🎉
-                        </p>
-                      )}
-
-                      {/* ===== WRONG ANSWER ===== */}
-                      {submitData.status === "wrong_answer" && submitData.failedTestCase && (
-                        <div className="space-y-2 text-xs">
-                          <div>
-                            <b>Input:</b>{" "}
-                            <span className="font-mono">{submitData.failedTestCase.input}</span>
-                          </div>
-                          <div>
-                            <b>Expected:</b>{" "}
-                            <span className="font-mono">{submitData.failedTestCase.output}</span>
-                          </div>
-                          <div>
-                            <b>Output:</b>{" "}
-                            <span className="font-mono">{submitData.output}</span>
-                          </div>
-                        </div>
-                      )}
-
-                      {/* ===== ERRORS ===== */}
-                      {(submitData.status === "compilation_error" ||
-                        submitData.status === "runtime_error") && (
-                        <pre className="mt-3 text-xs whitespace-pre-wrap text-left">
-                          {submitData.error}
-                        </pre>
-                      )}
+                  {(submitData.status === "compilation_error" || submitData.status === "runtime_error") && (
+                    <div className="ps-error-block" style={{ borderColor: submitData.status === "compilation_error" ? "rgba(245,158,11,0.2)" : "rgba(239,68,68,0.2)" }}>
+                      <div className={`ps-error-header ${submitData.status === "compilation_error" ? "ps-error-header-compile" : "ps-error-header-runtime"}`}>
+                        <span className="ps-dot" style={{ background: submitData.status === "compilation_error" ? "#f59e0b" : "#ef4444" }} />
+                        {submitData.status === "compilation_error" ? "Compilation Error" : "Runtime Error"}
+                      </div>
+                      <pre className="ps-error-pre">{submitData.error}</pre>
                     </div>
                   )}
                 </div>
               )}
+            </>}
+          </div>
+        </div>
+
+        {/* ── RIGHT PANEL ── */}
+        <div className="ps-right">
+          <div className="ps-editor-bar">
+            <div className="ps-editor-bar-left">
+              <select className="ps-select" value={language} onChange={e => setLanguage(e.target.value)}>
+                {languageOptions.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+              </select>
+              <select className="ps-select" value={editorTheme} onChange={e => setEditorTheme(e.target.value)}>
+                {themeOptions.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+              </select>
+              <button className="ps-reset" title="Reset to starter code"
+                onClick={() => setCode(problem?.codeTemplates?.[language]?.starter)}>
+                <RefreshCcw size={14} />
+              </button>
             </div>
+            <span className="ps-editor-label">CodeLeet Editor</span>
           </div>
 
-          {/* Right Panel - Code Editor & Results */}
-          <div className="flex flex-col h-full">
-            {/* Code Editor Section */}
-            <div className="flex-1 flex flex-col min-h-0">
-              {/* Editor Controls */}
-              <div className={`flex items-center justify-between px-4 py-2 border-b ${isDark ? 'border-slate-800 bg-slate-900/30' : 'border-gray-200 bg-gray-50'}`}>
-                <div className="flex items-center gap-3">
-                  <select
-                    value={language}
-                    onChange={(e)=>{const newLang = e.target.value; setLanguage(newLang);}}
-                    className={`px-3 py-1.5 rounded-lg text-sm outline-none cursor-pointer transition-all ${
-                      isDark 
-                        ? "bg-slate-800 border border-slate-700 hover:border-slate-600" 
-                        : "bg-white border border-gray-200 hover:border-gray-300"
-                    }`}
-                  >
-                    {languageOptions.map(opt => (
-                      <option key={opt.value} value={opt.value}>{opt.label}</option>
-                    ))}
-                  </select>                
+          <div className="ps-editor">
+            <Editor height="100%" language={languageOptions.find(l => l.value === language)?.monaco || "javascript"}
+              theme={editorTheme} value={code} onChange={value => setCode(value)}
+              options={{ minimap: { enabled: false }, fontSize: 14, lineNumbers: "on", scrollBeyondLastLine: false, automaticLayout: true, tabSize: 2, wordWrap: "on", padding: { top: 16, bottom: 16 } }} />
+          </div>
 
-                  <select
-                    value={editorTheme}
-                    onChange={(e) => setEditorTheme(e.target.value)}
-                    className={`px-3 py-1.5 rounded-lg text-sm outline-none cursor-pointer transition-all ${
-                      isDark 
-                        ? "bg-slate-800 border border-slate-700 hover:border-slate-600" 
-                        : "bg-white border border-gray-200 hover:border-gray-300"
-                    }`}
-                  >
-                    {themeOptions.map(opt => (
-                      <option key={opt.value} value={opt.value}>{opt.label}</option>
-                    ))}
-                  </select>
-                  <button onClick={() => setCode(problem?.codeTemplates?.[language]?.starter)} className="bg-green-700 px-2 py-1 rounded hover:bg-red-700 transition-all duration-600">
-                    <RefreshCcw size={20} />
-                  </button>
-                  <div>Reset to the starter code</div>
+          <div className="ps-results">
+            <div className="ps-results-bar">Test Results</div>
+            <div className="ps-results-content">
+              {runStatus === "Running" && (
+                <div className="ps-card ps-card-running" style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                  <div className="ps-spinner" />
+                  <span style={{ fontSize: 13, fontWeight: 600, color: "#60a5fa" }}>Running…</span>
                 </div>
-                <div className="flex items-center gap-2">
-                  <span className={`text-xs ${isDark ? 'text-gray-500' : 'text-gray-600'}`}>CodeLeet Editor</span>
-                </div>
-              </div>
+              )}
 
-              {/* Monaco Editor */}
-              <div className="flex-1 min-h-0">
-                <Editor
-                  height="100%"
-                  language={languageOptions.find(l => l.value === language)?.monaco || "javascript"}
-                  theme={editorTheme}
-                  value={code}
-                  onChange={(value) => setCode(value)}
-                  options={{
-                    minimap: { enabled: false },
-                    fontSize: 14,
-                    lineNumbers: "on",
-                    scrollBeyondLastLine: false,
-                    automaticLayout: true,
-                    tabSize: 2,
-                    wordWrap: "on",
-                    padding: { top: 16, bottom: 16 }
-                  }}
-                />
-              </div>
-            </div>
+              {testResults.length === 0 && (
+                <div className="ps-empty"><Zap size={28} style={{ opacity: 0.3 }} /><span>Run your code to see test results</span></div>
+              )}
 
-            {/* Results Section */}
-            <div className={`h-[280px] border-t flex flex-col ${isDark ? 'border-slate-800' : 'border-gray-200'}`}>
-              {/* Results Tabs */}
-              <div className={`flex items-center gap-1 px-4 py-2 border-b ${isDark ? 'border-slate-800 bg-slate-900/30' : 'border-gray-200 bg-gray-50'}`}>
-                <button
-                  className={`px-4 py-1.5 text-sm font-medium rounded-lg transition-all ${
-                      isDark ? 'text-gray-400 hover:text-gray-300' : 'text-gray-600 hover:text-gray-900'
-                  }`}
-                >
-                  Test Cases
-                </button>
-              </div>
-
-              {/* Results Content */}
-              <div className="flex-1 overflow-y-auto p-4">
-                <div className="space-y-3">
-
-                  {/* IDLE */}
-
-                  {runStatus === "Running" && (
-                    <div
-                      className={`p-4 rounded-xl border flex items-center gap-3 ${
-                        isDark
-                          ? "bg-blue-500/5 border-blue-500/20"
-                          : "bg-blue-50 border-blue-200"
-                      }`}
-                    >
-                      <div className="w-5 h-5 border-2 border-blue-500/30 border-t-blue-500 rounded-full animate-spin" />
-                      <span className="text-sm font-medium text-blue-400">
-                        Running…
-                      </span>
-                    </div>
-                  )}
-
-                  {testResults.length === 0 && (
-                    <div className={`text-center py-8 ${isDark ? "text-gray-500" : "text-gray-400"}`}>
-                      <Zap size={32} className="mx-auto mb-2 opacity-50" />
-                      <p className="text-sm">Run your code to see test results</p>
-                    </div>
-                  )}
-
-                  {testResults.map((r, idx) => {
-
-                    /* ================= ACCEPTED ================= */
-                    if (r.type === "accepted") {
-                      return (
-                        <div
-                          key={idx}
-                          className={`p-4 rounded-xl border ${
-                            isDark
-                              ? "bg-emerald-500/5 border-emerald-500/20"
-                              : "bg-emerald-50 border-emerald-200"
-                          }`}
-                        >
-                          <div className="flex items-center gap-2 mb-2">
-                            <Check size={16} className="text-emerald-400" />
-                            <span className="text-sm font-semibold text-emerald-400">
-                              Accepted
-                            </span>
-                          </div>
-
-                          <p className="text-xs text-emerald-400 mb-2">
-                            All test cases passed
-                          </p>
-
-                          <span className="text-xs">⏱ {r.time}</span>
-                        </div>
-                      );
-                    }
-
-                    /* ================= WRONG ANSWER ================= */
-                    if (r.type === "wrong_answer") {
-                      return (
-                        <div
-                          key={idx}
-                          className={`p-4 rounded-xl border ${
-                            isDark
-                              ? "bg-rose-500/5 border-rose-500/20"
-                              : "bg-rose-50 border-rose-200"
-                          }`}
-                        >
-                          <div className="flex items-center gap-2 mb-2">
-                            <X size={16} className="text-rose-400" />
-                            <span className="text-sm font-semibold text-rose-400">
-                              Wrong Answer
-                            </span>
-                          </div>
-
-                          <div className="space-y-1 text-xs">
-                            <div><b>Input:</b> <span className="font-mono">{r.input}</span></div>
-                            <div><b>Expected:</b> <span className="font-mono">{r.expected}</span></div>
-                            <div><b>Output:</b> <span className="font-mono">{r.output}</span></div>
-                            <div className="mt-2">⏱ {r.time}</div>
-                          </div>
-                        </div>
-                      );
-                    }
-
-                    /* ================= COMPILATION ERROR ================= */
-                    if (r.type === "compilation_error") {
-                      return (
-                        <div
-                          key={idx}
-                          className="p-4 rounded-xl border bg-yellow-500/5 border-yellow-500/20"
-                        >
-                          <div className="text-yellow-400 font-semibold mb-2">
-                            Compilation Error
-                          </div>
-                          <pre className="text-xs whitespace-pre-wrap">{r.error}</pre>
-                          <div className="text-xs mt-2">⏱ {r.time}</div>
-                        </div>
-                      );
-                    }
-
-                    /* ================= RUNTIME ERROR ================= */
-                    return (
-                      <div
-                        key={idx}
-                        className="p-4 rounded-xl border bg-red-500/5 border-red-500/20"
-                      >
-                        <div className="text-red-400 font-semibold mb-2">
-                          Runtime Error
-                        </div>
-                        <pre className="text-xs whitespace-pre-wrap">{r.error}</pre>
-                        <div className="text-xs mt-2">⏱ {r.time}</div>
+              {testResults.map((r, idx) => {
+                if (r.type === "accepted") return (
+                  <div key={idx} className="ps-card ps-card-accepted">
+                    <div className="ps-card-header"><Check size={14} style={{ color: "#22c55e" }} /><span style={{ color: "#22c55e" }}>Accepted</span></div>
+                    {r.totalCount != null && <>
+                      <div style={{ display: "flex", justifyContent: "space-between", fontSize: 11 }}>
+                        <span style={{ color: "#64748b" }}>Test Cases Passed</span>
+                        <span style={{ color: "#22c55e", fontWeight: 700 }}>{r.passedCount} / {r.totalCount}</span>
                       </div>
-                    );
-                  })}
-                </div>
-              </div>
-
+                      <div className="ps-progress"><div className="ps-progress-fill ps-progress-green" style={{ width: `${(r.passedCount / r.totalCount) * 100}%` }} /></div>
+                    </>}
+                    <p style={{ color: "#22c55e", fontSize: 12, margin: "4px 0" }}>All test cases passed 🎉</p>
+                    <div className="ps-meta">⏱ {r.time}</div>
+                  </div>
+                );
+                if (r.type === "wrong_answer") return (
+                  <div key={idx} className="ps-card ps-card-wrong">
+                    <div className="ps-card-header"><X size={14} style={{ color: "#ef4444" }} /><span style={{ color: "#ef4444" }}>Wrong Answer</span></div>
+                    {r.totalCount != null && <>
+                      <div style={{ display: "flex", justifyContent: "space-between", fontSize: 11 }}>
+                        <span style={{ color: "#64748b" }}>Test Cases Passed</span>
+                        <span style={{ color: "#ef4444", fontWeight: 700 }}>{r.passedCount} / {r.totalCount}</span>
+                      </div>
+                      <div className="ps-progress"><div className="ps-progress-fill ps-progress-red" style={{ width: `${(r.passedCount / r.totalCount) * 100}%` }} /></div>
+                    </>}
+                    {r.failedIndex != null && (
+                      <div style={{ display: "inline-block", padding: "2px 8px", borderRadius: 4, background: "rgba(239,68,68,0.1)", color: "#f87171", fontSize: 11, margin: "6px 0" }}>
+                        ❌ Failed on Test Case #{r.failedIndex}
+                      </div>
+                    )}
+                    <div className="ps-detail-row"><b>Input: </b><span>{r.input}</span></div>
+                    <div className="ps-detail-row"><b>Expected: </b><span>{r.expected}</span></div>
+                    <div className="ps-detail-row"><b>Output: </b><span>{r.output}</span></div>
+                    <div className="ps-meta" style={{ marginTop: 6 }}>⏱ {r.time}</div>
+                  </div>
+                );
+                if (r.type === "compilation_error") return (
+                  <div key={idx} className="ps-error-block" style={{ borderColor: "rgba(245,158,11,0.2)" }}>
+                    <div className="ps-error-header ps-error-header-compile">
+                      <span className="ps-dot" style={{ background: "#f59e0b" }} />Compilation Error
+                      <span style={{ marginLeft: "auto", color: "#64748b", fontSize: 11 }}>⏱ {r.time}</span>
+                    </div>
+                    <pre className="ps-error-pre">{r.error}</pre>
+                  </div>
+                );
+                return (
+                  <div key={idx} className="ps-error-block" style={{ borderColor: "rgba(239,68,68,0.2)" }}>
+                    <div className="ps-error-header ps-error-header-runtime">
+                      <span className="ps-dot" style={{ background: "#ef4444" }} />Runtime Error
+                      <span style={{ marginLeft: "auto", color: "#64748b", fontSize: 11 }}>⏱ {r.time}</span>
+                    </div>
+                    <pre className="ps-error-pre">{r.error}</pre>
+                  </div>
+                );
+              })}
             </div>
           </div>
         </div>

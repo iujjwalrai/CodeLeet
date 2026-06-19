@@ -25,14 +25,25 @@ module.exports = async function runCpp({
   fs.writeFileSync(path.join(workDir, "Solution.cpp"), userCode);
   fs.writeFileSync(path.join(workDir, "Main.cpp"), driverCode);
 
+  // Compile: workDir mounted rw so g++ can write the binary directly to /app.
   const compileCmd = `
 docker run --rm \
   --cpus="1.0" \
   --memory="256m" \
+  --memory-swap="256m" \
   --network none \
+  --pids-limit 64 \
+  --ulimit nproc=64:64 \
+  --ulimit nofile=64:64 \
+  --ulimit fsize=10485760 \
+  --cap-drop ALL \
+  --security-opt no-new-privileges \
+  --read-only \
+  --tmpfs /tmp:rw,nosuid,size=32m \
+  --user nobody \
   -v "${workDir}:/app" \
   codeleet-cpp \
-  sh -c "cd /app && g++ -std=c++17 Main.cpp Solution.cpp -O2 -o main"
+  sh -c "cp /app/*.cpp /tmp/ && cd /tmp && g++ -std=c++17 Main.cpp Solution.cpp -O2 -o /app/main"
 `;
 
   const start = performance.now();
@@ -42,50 +53,84 @@ docker run --rm \
     await execPromise(compileCmd, 3000);
 
     /* ================= RUN TEST CASES ================= */
-    for (const tc of testCases) {
+    let passedCount = 0;
+    let failedTestCase = null;
+    let failedTestCaseIndex = -1;
+    let failedOutput = null;
+
+    for (let i = 0; i < testCases.length; i++) {
+      const tc = testCases[i];
+      // Run: workDir is read-only; copy the binary into tmpfs (with exec allowed) to run it.
       const runCmd = `
 docker run --rm -i \
   --cpus="1.0" \
   --memory="256m" \
+  --memory-swap="256m" \
   --network none \
-  -v "${workDir}:/app" \
+  --pids-limit 64 \
+  --ulimit nproc=64:64 \
+  --ulimit nofile=64:64 \
+  --ulimit fsize=10485760 \
+  --cap-drop ALL \
+  --security-opt no-new-privileges \
+  --read-only \
+  --tmpfs /tmp:rw,nosuid,size=32m \
+  --user nobody \
+  -v "${workDir}:/app:ro" \
   codeleet-cpp \
-  sh -c "cd /app && ./main"
+  sh -c "cp /app/main /tmp/ && chmod +x /tmp/main && cd /tmp && ./main"
 `;
 
       const { stdout } = await execPromise(runCmd, 3000, tc.input);
 
-      if (stdout.trim() !== tc.output.trim()) {
-        cleanup(workDir);
-        return {
-          status: "wrong_answer",
-          output: stdout.trim(),
-          failedTestCase: tc,
-          error: `Expected: ${tc.output}, Got: ${stdout.trim()}`,
-          time: Math.round(performance.now() - start),
-        };
+      if (stdout.trim() === tc.output.trim()) {
+        passedCount++;
+      } else if (failedTestCase === null) {
+        failedTestCase = tc;
+        failedTestCaseIndex = i;
+        failedOutput = stdout.trim();
       }
     }
 
     cleanup(workDir);
-    return {
-      status: "accepted",
-      output: "All test cases passed",
-      error: null,
-      time: Math.round(performance.now() - start),
-    };
+
+    if (failedTestCase === null) {
+      return {
+        status: "accepted",
+        output: "All test cases passed",
+        passedCount: testCases.length,
+        totalCount: testCases.length,
+        error: null,
+        time: Math.round(performance.now() - start),
+      };
+    } else {
+      return {
+        status: "wrong_answer",
+        output: failedOutput,
+        passedCount,
+        totalCount: testCases.length,
+        failedTestCase,
+        failedTestCaseIndex,
+        error: `Expected: ${failedTestCase.output}, Got: ${failedOutput}`,
+        time: Math.round(performance.now() - start),
+      };
+    }
 
   } catch (err) {
     cleanup(workDir);
 
-    const msg = err.message || "";
+    const raw = err.message || "";
+    const cleanError = raw
+      .replace(/^Command failed:[\s\S]*?\n\n/, "")
+      .replace(/^Command failed:[^\n]*\n?/, "")
+      .trim();
 
     return {
-      status: msg.includes("g++")
+      status: cleanError.includes("g++") || cleanError.includes(".cpp") || raw.includes("g++")
         ? "compilation_error"
         : "runtime_error",
       output: null,
-      error: msg,
+      error: cleanError || "Unknown error",
       time: Math.round(performance.now() - start),
     };
   }

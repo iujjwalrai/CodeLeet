@@ -5,12 +5,12 @@ import { useNavigate } from "react-router-dom";
 import Navbar from "../components/Navbar";
 import { useAuth } from "../context/AuthContext";
 const Home = () => {
-    const naviagte = useNavigate();
-    const {user} = useAuth();
+  const naviagte = useNavigate();
+  const { user } = useAuth();
   return (
     <div className="min-h-screen w-full bg-[#0A0A0A] text-white">
       {/* Navigation */}
-      <Navbar/>
+      <Navbar />
       {/* Hero Section */}
       <section className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-20 pb-32">
         <motion.div
@@ -29,7 +29,7 @@ const Home = () => {
             <motion.button
               whileHover={{ scale: 1.05 }}
               whileTap={{ scale: 0.95 }}
-              className="bg-purple-600 hover:bg-purple-700 transition px-8 py-4 rounded-xl font-medium text-lg flex items-center gap-2" onClick={()=>{if(user) naviagte("/dashboard"); else naviagte("/login")}}
+              className="bg-purple-600 hover:bg-purple-700 transition px-8 py-4 rounded-xl font-medium text-lg flex items-center gap-2" onClick={() => { if (user) naviagte("/dashboard"); else naviagte("/login") }}
             >
               Get Started
               <ArrowRight size={20} />
@@ -37,7 +37,7 @@ const Home = () => {
             <motion.button
               whileHover={{ scale: 1.05 }}
               whileTap={{ scale: 0.95 }}
-              className="bg-[#1A1A1A] hover:bg-[#242424] border border-white/10 transition px-8 py-4 rounded-xl font-medium text-lg" onClick={()=>naviagte("/problems")}
+              className="bg-[#1A1A1A] hover:bg-[#242424] border border-white/10 transition px-8 py-4 rounded-xl font-medium text-lg" onClick={() => naviagte("/problems")}
             >
               View Problems
             </motion.button>

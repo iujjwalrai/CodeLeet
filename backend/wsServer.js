@@ -1,6 +1,7 @@
 const WebSocket = require("ws");
 const connectionPubSub = require("./config/redispubsub");
 const Submission = require("./models/Submission");
+const cache = require("./config/redis"); // for reading cached job statuses
 
 /**
  * jobId -> { ws, channel }
@@ -13,9 +14,15 @@ const FINAL_STATUSES = new Set([
   "runtime_error",
 ]);
 
-function subscribe(jobId, ws, channel) {
+async function subscribe(jobId, ws, channel) {
   clients.set(jobId, { ws, channel });
   connectionPubSub.subscribe(channel);
+
+  // Replay cached status if the worker already published before WS was ready
+  const cached = await cache.get(`job-cache:${channel}`);
+  if (cached && ws.readyState === WebSocket.OPEN) {
+    ws.send(cached);
+  }
 }
 
 

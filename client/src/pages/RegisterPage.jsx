@@ -1,14 +1,16 @@
 import React, { useState } from "react";
 import { motion } from "framer-motion";
-import { Eye, EyeOff, Chrome } from "lucide-react";
+import { Eye, EyeOff, Chrome, Loader2 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import axios from "../api/axios";
 import { useForm } from "react-hook-form";
 import Navbar from "../components/Navbar";
+import toast from "react-hot-toast";
 
 const RegisterPage = () => {
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirm, setShowConfirm] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
   const navigate = useNavigate();
 
   const {
@@ -25,16 +27,21 @@ const RegisterPage = () => {
 
 
   const onRegister = async (data) => {
+    if (data.password !== data.confirmPassword) {
+      toast.error("Passwords do not match");
+      return;
+    }
+    setIsLoading(true);
     try {
-      // optional: remove confirmPassword before sending
       const { confirmPassword, ...payload } = data;
-
-      const response = await axios.post("/api/auth/register", payload);
-      console.log(response.data);
-
+      await axios.post("/api/auth/register", payload);
+      toast.success("Account created! Please log in.");
       navigate("/login");
     } catch (error) {
-      console.error(error.response?.data || error.message);
+      const msg = error.response?.data?.message || error.message || "Registration failed";
+      toast.error(msg);
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -155,11 +162,17 @@ const RegisterPage = () => {
 
             {/* Submit */}
             <motion.button
-              whileTap={{ scale: 0.95 }}
+              whileTap={!isLoading ? { scale: 0.95 } : {}}
               type="submit"
-              className="w-full bg-purple-600 hover:bg-purple-700 text-white p-3 rounded-xl font-medium mb-4"
+              disabled={isLoading}
+              className="w-full bg-purple-600 hover:bg-purple-700 disabled:opacity-70 disabled:cursor-not-allowed text-white p-3 rounded-xl font-medium mb-4 flex items-center justify-center gap-2"
             >
-              Create Account
+              {isLoading ? (
+                <>
+                  <Loader2 size={18} className="animate-spin" />
+                  Creating account…
+                </>
+              ) : "Create Account"}
             </motion.button>
           </form>
 

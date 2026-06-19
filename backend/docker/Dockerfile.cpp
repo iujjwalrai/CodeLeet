@@ -2,6 +2,8 @@ FROM alpine:3.19
 
 RUN apk add --no-cache g++ build-base
 
-WORKDIR /app
+# Run as non-root. 'nobody' already exists in Alpine.
+USER nobody
 
-CMD ["sh", "-c", "sleep infinity"]
+ENV HOME=/tmp
+WORKDIR /tmp
