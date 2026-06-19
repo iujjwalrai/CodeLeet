@@ -34,11 +34,17 @@ module.exports = async function runPython({ userCode, testCases }) {
 
   const id = uuid();
   const baseDir = path.join(process.cwd(), "tmp");
-  if (!fs.existsSync(baseDir)) fs.mkdirSync(baseDir);
+  if (!fs.existsSync(baseDir)) {
+    fs.mkdirSync(baseDir, { mode: 0o777 });
+  } else {
+    fs.chmodSync(baseDir, 0o777);
+  }
 
   const workDir = fs.mkdtempSync(path.join(baseDir, `py-${id}-`));
-  fs.writeFileSync(path.join(workDir, "main.py"), userCode);
-  fs.writeFileSync(path.join(workDir, "runner.py"), PYTHON_RESOURCE_WRAPPER);
+  fs.chmodSync(workDir, 0o777);
+
+  fs.writeFileSync(path.join(workDir, "main.py"), userCode, { mode: 0o666 });
+  fs.writeFileSync(path.join(workDir, "runner.py"), PYTHON_RESOURCE_WRAPPER, { mode: 0o666 });
 
   const start = perf.now();
 

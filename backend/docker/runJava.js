@@ -18,15 +18,18 @@ module.exports = async function runJava({
 
   const baseDir = path.join(process.cwd(), "tmp");
   if (!fs.existsSync(baseDir)) {
-    fs.mkdirSync(baseDir);
+    fs.mkdirSync(baseDir, { mode: 0o777 });
+  } else {
+    fs.chmodSync(baseDir, 0o777);
   }
 
   const jobId = uuidv4();
   const workDir = fs.mkdtempSync(path.join(baseDir, `java-${jobId}-`));
+  fs.chmodSync(workDir, 0o777); // Let nobody user read/write to this directory
 
   // Write files
-  fs.writeFileSync(path.join(workDir, "Solution.java"), userCode);
-  fs.writeFileSync(path.join(workDir, "Main.java"), driverCode);
+  fs.writeFileSync(path.join(workDir, "Solution.java"), userCode, { mode: 0o666 });
+  fs.writeFileSync(path.join(workDir, "Main.java"), driverCode, { mode: 0o666 });
 
   // Compile: workDir mounted rw so javac output (.class files) can be written back to the host.
   const compileCmd = `
