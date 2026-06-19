@@ -14,11 +14,19 @@ require("./config/passport");
 connectDB();
 const app = express();
 app.use(passport.initialize())
-const allowedOrigin = process.env.FRONTEND_URL || 'http://localhost:5173';
+const allowedOrigins = [
+  'http://localhost:5173',
+  'https://codeleet.me',
+  'https://codeleet-4cpe.onrender.com'
+];
+
+if (process.env.FRONTEND_URL && !allowedOrigins.includes(process.env.FRONTEND_URL)) {
+  allowedOrigins.push(process.env.FRONTEND_URL);
+}
 
 app.use(
   cors({
-    origin: allowedOrigin,
+    origin: allowedOrigins,
     credentials: true,
   }),
 );
