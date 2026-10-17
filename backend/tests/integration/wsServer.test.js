@@ -1,5 +1,6 @@
 const WebSocket = require('ws');
 const server = require('../../app');
+const { closeWebSocket } = require('../../wsServer');
 const pubsub = require('../../config/redispubsub');
 const cache = require('../../config/redis');
 const Submission = require('../../models/Submission');
@@ -124,42 +125,40 @@ describe('WebSocket job updates', () => {
 });
 
 describe('submission verdicts', () => {
-  it('saves the final verdict of a SUBMIT job to the submission', async () => {
+  // The submission worker saves verdicts (see unit/submissionWorker.test.js).
+  // If the WebSocket server also wrote them, every API replica holding a
+  // subscriber would write the same verdict again.
+  it('only forwards final verdicts and leaves the database to the worker', async () => {
     const user = await createUser();
     const problem = await createProblem();
     const submission = await createSubmission(user, problem);
-    const tc = { input: '5 5', output: '10' };
+    const { ws, messages } = await openClient();
+    ws.send(JSON.stringify({ type: 'SUBMIT', jobId: '11' }));
+    await waitFor(() => pubsub.subscribe.mock.calls.length === 1);
 
     publish('job-updates-submission:11', '11', {
       type: 'SUBMIT',
       submissionId: submission._id.toString(),
       status: 'wrong_answer',
-      tc,
       output: '11',
-      error: 'Expected: 10, Got: 11',
-      time: 120,
-      memory: 0,
     });
+    await waitFor(() => messages.length === 1);
+    await new Promise((resolve) => setTimeout(resolve, 50));
 
-    await waitFor(async () => (await Submission.findById(submission._id)).status !== 'in_queue');
-
-    const stored = await Submission.findById(submission._id);
-    expect(stored).toMatchObject({ status: 'wrong_answer', output: '11', time: 120 });
-    expect(stored.failedTestCase).toMatchObject({ input: '5 5', expected: '10', output: '11' });
-  });
-
-  it('does not touch the submission for non-final statuses', async () => {
-    const user = await createUser();
-    const problem = await createProblem();
-    const submission = await createSubmission(user, problem);
-
-    publish('job-updates-submission:12', '12', {
-      type: 'SUBMIT',
-      submissionId: submission._id.toString(),
-      status: 'Running',
-    });
-    await new Promise((resolve) => setTimeout(resolve, 100));
-
+    expect(messages[0].data.status).toBe('wrong_answer');
     expect((await Submission.findById(submission._id)).status).toBe('in_queue');
+    await close(ws);
+  });
+});
+
+// Keep last: closes the WebSocket server for the rest of this file.
+describe('closeWebSocket', () => {
+  it('tells connected clients the server is going away (1001)', async () => {
+    const { ws } = await openClient();
+    const closed = new Promise((resolve) => ws.once('close', (code) => resolve(code)));
+
+    await closeWebSocket();
+
+    await expect(closed).resolves.toBe(1001);
   });
 });

@@ -7,6 +7,7 @@ const runJava = require("../docker/runJava");
 const runJavaScript = require("../docker/runJavaScript");
 const runCpp = require("../docker/runCpp");
 const cache = require("../config/redis"); // separate client for SET commands
+const gracefulShutdown = require("../utils/gracefulShutdown");
 
 async function publishJobUpdate(jobId, data) {
   const payload = JSON.stringify({ jobId, data });
@@ -118,5 +119,11 @@ const worker = new Worker(
   },
   { connection, metrics: { collect: false }, }
 );
+
+// Let the current run finish before exiting (see submissionWorker.js).
+gracefulShutdown("run-worker", async () => {
+  await worker.close();
+  await Promise.allSettled([connection.quit(), connectionPubSub.quit()]);
+}, { timeoutMs: process.env.SHUTDOWN_TIMEOUT_MS || 30000 });
 
 console.log("Run worker is listening...");

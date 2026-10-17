@@ -33,9 +33,11 @@ module.exports = async function runPython({ userCode, testCases }) {
   }
 
   const id = uuid();
-  const baseDir = path.join(process.cwd(), "tmp");
+  // Host path shared with the sandbox containers. When the worker itself runs in
+  // Docker, mount the same host path at the same path inside it.
+  const baseDir = process.env.CODE_TMP_DIR || path.join(process.cwd(), "tmp");
   if (!fs.existsSync(baseDir)) {
-    fs.mkdirSync(baseDir, { mode: 0o777 });
+    fs.mkdirSync(baseDir, { recursive: true, mode: 0o777 });
   } else {
     fs.chmodSync(baseDir, 0o777);
   }

@@ -55,10 +55,7 @@ describe('POST /api/submissions', () => {
     expect(res.status).toBe(401);
   });
 
-  // Known bug: the controller reads problem.codeTemplates before its null
-  // check, so an unknown problem crashes into the 500 handler. Flip this to a
-  // normal `it` once submissionController.js checks for null first.
-  it.failing('returns 404 for an unknown problem', async () => {
+  it('returns 404 for an unknown problem', async () => {
     const user = await createUser();
 
     const res = await request(app)
@@ -98,8 +95,7 @@ describe('POST /api/submissions/run', () => {
     expect(res.status).toBe(400);
   });
 
-  // Same known bug as above, in runConroller.js.
-  it.failing('returns 404 for an unknown problem', async () => {
+  it('returns 404 for an unknown problem', async () => {
     const user = await createUser();
 
     const res = await request(app)
