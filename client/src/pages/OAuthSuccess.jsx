@@ -12,7 +12,7 @@ const OAuthSuccess = () => {
       localStorage.setItem("token", token);
       navigate("/dashboard");
     }
-  }, []);
+  }, [navigate]);
 
   return null;
 };

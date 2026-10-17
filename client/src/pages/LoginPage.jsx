@@ -65,6 +65,9 @@ const LoginPage = () => {
               placeholder="Enter your email"
               className="w-full p-3 bg-[#1A1A1A] rounded-xl text-white outline-none border border-transparent focus:border-purple-500 transition"
              {...register("email", {required: "Email is required"})}/>
+            {errors.email && (
+              <p className="text-red-400 text-sm mt-1">{errors.email.message}</p>
+            )}
           </div>
 
           {/* Password */}
@@ -84,6 +87,9 @@ const LoginPage = () => {
                 {showPassword ? <EyeOff size={20} /> : <Eye size={20} />}
               </button>
             </div>
+            {errors.password && (
+              <p className="text-red-400 text-sm mt-1">{errors.password.message}</p>
+            )}
           </div>
 
           {/* Login Button */}

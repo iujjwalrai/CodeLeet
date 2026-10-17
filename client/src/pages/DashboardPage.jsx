@@ -48,7 +48,7 @@ const DashboardPage = () => {
       const response = await axios.get("/api/auth/me");
       setUserData(response.data.user);
     } catch (error) {
-      console.error("Failed to load user");
+      console.error("Failed to load user", error);
     }
   };
 
@@ -72,7 +72,7 @@ const DashboardPage = () => {
         const res = await axios.get("/api/auth/me/recent");
         setRecentSubmissions(res.data.submissions);
       } catch (err) {
-        console.error("Failed to fetch recent submissions");
+        console.error("Failed to fetch recent submissions", err);
       }
     };
 
@@ -85,7 +85,7 @@ const DashboardPage = () => {
         const res = await axios.get("/api/auth/me/heatmap");
         setHeatmapData(res.data.heatmap);
       } catch (err) {
-        console.error("Failed to load heatmap");
+        console.error("Failed to load heatmap", err);
       }
     };
 
@@ -140,7 +140,7 @@ const DashboardPage = () => {
         const res = await axios.patch("/api/users/me", form);
         onSave(res.data.user);
       } catch (err) {
-        console.error("Profile update failed");
+        console.error("Profile update failed", err);
       }
     };
 

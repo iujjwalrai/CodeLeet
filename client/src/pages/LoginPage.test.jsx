@@ -52,9 +52,11 @@ describe('LoginPage', () => {
     expect(screen.getByRole('button', { name: 'Login' })).toBeEnabled()
   })
 
-  it('does not call the API when fields are empty', async () => {
+  it('shows validation messages and does not call the API when fields are empty', async () => {
     await userEvent.click(screen.getByRole('button', { name: 'Login' }))
 
+    expect(await screen.findByText('Email is required')).toBeInTheDocument()
+    expect(screen.getByText('Password is required')).toBeInTheDocument()
     expect(axios.post).not.toHaveBeenCalled()
   })
 

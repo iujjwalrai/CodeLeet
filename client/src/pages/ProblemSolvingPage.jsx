@@ -16,11 +16,10 @@ const ProblemPage = ({ problemId = "1" }) => {
   const [activeTab, setActiveTab] = useState("description");
   const [testResults, setTestResults] = useState([]);
   const [runStatus, setRunStatus] = useState(null);
-  const [runData, setRunData] = useState(null);
   const [submitData, setSubmitData] = useState(null);
   const [timer, setTimer] = useState(0);
   const [isTimerRunning, setIsTimerRunning] = useState(false);
-  const [customInput, setCustomInput] = useState("");
+  const [customInput] = useState("");
   const [submissions, setSubmissions] = useState([]);
   const [submissionsLoading, setSubmissionsLoading] = useState(false);
   const location = useLocation();
@@ -28,15 +27,12 @@ const ProblemPage = ({ problemId = "1" }) => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
 
-  const slugFromPath = () => {
-    const parts = location.pathname.split('/').filter(Boolean);
-    return parts.length ? parts[parts.length - 1] : problemId;
-  };
   const navigate = useNavigate();
 
   useEffect(() => {
     const fetchProblem = async () => {
-      const slug = slugFromPath();
+      const parts = location.pathname.split('/').filter(Boolean);
+      const slug = parts.length ? parts[parts.length - 1] : problemId;
       setLoading(true); setError(null);
       try {
         const res = await axios.get(`/api/problems/${slug}`);
@@ -47,7 +43,7 @@ const ProblemPage = ({ problemId = "1" }) => {
       } finally { setLoading(false); }
     };
     fetchProblem();
-  }, [location.pathname]);
+  }, [location.pathname, problemId]);
 
   const storageKey = useMemo(() => {
     if (problem) return `codeleet-${problem._id}-${language}`;
@@ -65,7 +61,7 @@ const ProblemPage = ({ problemId = "1" }) => {
       const response = await axios.post("/api/auth/logout");
       if (response.data.success) { setUser(null); navigate("/login"); }
       else toast.error("Logout failed");
-    } catch (err) { toast.error("Logout failed"); }
+    } catch { toast.error("Logout failed"); }
   };
 
   useEffect(() => {
@@ -80,7 +76,7 @@ const ProblemPage = ({ problemId = "1" }) => {
       localStorage.setItem(storageKey, code);
     }, 2000);
     return () => clearTimeout(t);
-  }, [code, problem]);
+  }, [code, storageKey]);
 
   const formatTime = (seconds) => {
     const hrs = Math.floor(seconds / 3600);
@@ -110,7 +106,7 @@ const ProblemPage = ({ problemId = "1" }) => {
         const msg = JSON.parse(event.data);
         console.log("WebSocket message:", msg);
         const data = msg.data;
-        setRunStatus(data.status); setRunData(data);
+        setRunStatus(data.status);
         if (data.status === "accepted") {
           setTestResults([{ type: "accepted", passedCount: data.passedCount ?? data.totalCount, totalCount: data.totalCount, time: `${data.time} ms` }]);
           ws.close(); return;
@@ -128,7 +124,7 @@ const ProblemPage = ({ problemId = "1" }) => {
           ws.close();
         }
       };
-    } catch (error) { toast.error("Failed to run code. Please try again."); }
+    } catch { toast.error("Failed to run code. Please try again."); }
   };
 
   const handleSubmit = async () => {
@@ -149,7 +145,7 @@ const ProblemPage = ({ problemId = "1" }) => {
           setActiveTab("result");
         }
       };
-    } catch (error) { toast.error("Submission failed. Please try again."); }
+    } catch { toast.error("Submission failed. Please try again."); }
   };
 
   const languageOptions = [
