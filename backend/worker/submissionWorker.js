@@ -1,12 +1,25 @@
 require("dotenv").config();
 const { Worker } = require("bullmq");
+const mongoose = require("mongoose");
+const connectDB = require("../config/db");
 const connection = require("../config/redis");
 const connectionPubSub = require("../config/redispubsub");
+const Submission = require("../models/Submission");
 const runPython = require("../docker/runPython");
 const runJava = require("../docker/runJava");
 const runJavaScript = require("../docker/runJavaScript");
 const runCpp = require("../docker/runCpp");
 const cache = require("../config/redis");
+const gracefulShutdown = require("../utils/gracefulShutdown");
+
+// Statuses the Submission model can store; anything else (e.g. "error") is
+// only published, as before.
+const FINAL_STATUSES = new Set([
+  "accepted",
+  "wrong_answer",
+  "compilation_error",
+  "runtime_error",
+]);
 
 async function publishJobUpdate(jobId, data) {
   const payload = JSON.stringify({ jobId, data });
@@ -15,9 +28,28 @@ async function publishJobUpdate(jobId, data) {
   connectionPubSub.publish(channel, payload);
 }
 
-const worker = new Worker(
-  "submission-queue",
-  async (job) => {
+// Saved here rather than in the WebSocket server so the verdict is stored
+// exactly once, even if the user closed the tab or several API replicas run.
+async function saveVerdict(submissionId, result) {
+  if (!FINAL_STATUSES.has(result.status)) return;
+
+  const tc = result.failedTestCase;
+  await Submission.updateOne(
+    { _id: submissionId },
+    {
+      status: result.status,
+      output: result.output,
+      error: result.error,
+      time: result.time,
+      memory: result.memory,
+      failedTestCase: tc
+        ? { input: tc.input, expected: tc.output, output: result.output }
+        : undefined,
+    }
+  );
+}
+
+async function processSubmission(job) {
     const { submissionId, code, language, problem } = job.data;
 
     console.log("Worker started for job:", submissionId);
@@ -42,7 +74,7 @@ const worker = new Worker(
         case "java":
           publishJobUpdate(job.id, {
             type:"SUBMIT",
-            stauts: "Running"
+            status: "Running"
           })
           result = await runJava(payload);
           break;
@@ -50,7 +82,7 @@ const worker = new Worker(
         case "python":
           publishJobUpdate(job.id, {
             type:"SUBMIT",
-            stauts: "Running"
+            status: "Running"
           })
           result = await runPython(payload);
           break;
@@ -58,7 +90,7 @@ const worker = new Worker(
         case "javascript":
           publishJobUpdate(job.id, {
             type:"SUBMIT",
-            stauts: "Running"
+            status: "Running"
           })
           result = await runJavaScript(payload);
           break;
@@ -66,7 +98,7 @@ const worker = new Worker(
         case "cpp":
           publishJobUpdate(job.id, {
             type:"SUBMIT",
-            stauts: "Running"
+            status: "Running"
           })
           result = await runCpp(payload);
           break;
@@ -88,6 +120,10 @@ const worker = new Worker(
         time: result.time || 0,
         memory: result.memory || 0,
       })
+
+      // Save before publishing so a client that refetches on the final
+      // update already sees the stored verdict.
+      await saveVerdict(submissionId, result);
 
       publishJobUpdate(job.id, {
         type: "SUBMIT",
@@ -138,8 +174,26 @@ const worker = new Worker(
         memory: 0,
       };
     }
-  },
-  { connection, metrics: { collect: false }, }
-);
+}
 
-console.log("Worker is listening...");
+if (require.main === module) {
+  connectDB();
+
+  const worker = new Worker(
+    "submission-queue",
+    processSubmission,
+    { connection, metrics: { collect: false }, }
+  );
+
+  // A submission can run many test cases, so allow longer than the API's 10s
+  // to finish the current job before exiting.
+  gracefulShutdown("submission-worker", async () => {
+    await worker.close();
+    await Promise.allSettled([connection.quit(), connectionPubSub.quit()]);
+    await mongoose.disconnect();
+  }, { timeoutMs: process.env.SHUTDOWN_TIMEOUT_MS || 30000 });
+
+  console.log("Worker is listening...");
+}
+
+module.exports = { processSubmission };

@@ -2,7 +2,6 @@ const mongoose = require('mongoose');
 require("dotenv").config();
 const connectDB = async () => {
   const uri = process.env.MONGODB_URI;
-  console.log(uri);
   if (!uri) {
     throw new Error('Missing MONGODB_URI in environment variables');
   }

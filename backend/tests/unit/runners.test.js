@@ -233,6 +233,28 @@ describe('runPython', () => {
   });
 });
 
+describe('CODE_TMP_DIR', () => {
+  afterEach(() => {
+    delete process.env.CODE_TMP_DIR;
+  });
+
+  it.each([
+    ['runCpp', runCpp, 'g++'],
+    ['runJava', runJava, 'javac'],
+    ['runPython', runPython, null],
+  ])('%s writes job folders under CODE_TMP_DIR and mounts that path', async (_name, run, compiler) => {
+    process.env.CODE_TMP_DIR = path.join(workRoot, 'shared', 'jobs');
+    fakeDocker((cmd, stdin) => (compiler && cmd.includes(compiler) ? {} : { stdout: addNumbers(stdin) }));
+
+    await run({ userCode: 'x', driverCode: 'y', testCases });
+
+    for (const [cmd] of exec.mock.calls) {
+      expect(cmd).toContain(`-v "${process.env.CODE_TMP_DIR}/`);
+    }
+    expect(fs.readdirSync(process.env.CODE_TMP_DIR)).toEqual([]);
+  });
+});
+
 describe('runJavaScript', () => {
   // Known bug: docker/runJavaScript.js is empty, so the workers'
   // `runJavaScript(payload)` throws "runJavaScript is not a function" and every

@@ -13,10 +13,10 @@ const createSubmission = async (req, res) => {
 
   try {
     const problem = await Problem.findById(problemId);
-    const prob = {codeTemplates: problem.codeTemplates, testCases: problem.testCases};
     if (!problem) {
       return res.status(404).json({ message: 'Problem not found' });
     }
+    const prob = {codeTemplates: problem.codeTemplates, testCases: problem.testCases};
 
     const submission = await Submission.create({
       user: req.user._id,

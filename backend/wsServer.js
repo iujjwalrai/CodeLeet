@@ -1,18 +1,12 @@
 const WebSocket = require("ws");
 const connectionPubSub = require("./config/redispubsub");
-const Submission = require("./models/Submission");
 const cache = require("./config/redis"); // for reading cached job statuses
 
 /**
  * jobId -> { ws, channel }
  */
 const clients = new Map();
-const FINAL_STATUSES = new Set([
-  "accepted",
-  "wrong_answer",
-  "compilation_error",
-  "runtime_error",
-]);
+let wss = null;
 
 async function subscribe(jobId, ws, channel) {
   clients.set(jobId, { ws, channel });
@@ -50,7 +44,7 @@ const handlers = {
 
 
 function initWebSocket(server) {
-  const wss = new WebSocket.Server({ server });
+  wss = new WebSocket.Server({ server });
 
   wss.on("connection", (ws) => {
     ws.on("message", (raw) => {
@@ -75,29 +69,30 @@ function initWebSocket(server) {
 
   /* ================= REDIS → WS ================= */
 
-  connectionPubSub.on("message", async (channel, message) => {
+  // Forward-only: the submission worker saves verdicts to MongoDB itself, so
+  // a result is stored whether or not anyone is connected.
+  connectionPubSub.on("message", (channel, message) => {
     try {
-      const payload = JSON.parse(message);
-      const {jobId, data} = payload;
-
-      const {type, submissionId, status, tc, output, error, time, memory} = data;
+      const { jobId } = JSON.parse(message);
 
       const entry = clients.get(jobId);
       if(entry && entry.ws.readyState===WebSocket.OPEN){
         entry.ws.send(message);
       }
-
-      if(type==="SUBMIT" && FINAL_STATUSES.has(status)){
-        await Submission.updateOne({_id: submissionId}, {status, output, error, time, memory, failedTestCase:
-          tc ? {input: tc.input, expected: tc.output, output} : undefined
-        });
-        
-      }
-
     } catch (err) {
       console.error("Redis parsing error:", err.message);
     }
   });
 }
 
-module.exports = { initWebSocket };
+// Used on shutdown: tells clients the server is going away (1001) so they can
+// reconnect elsewhere, and stops accepting new upgrades.
+function closeWebSocket() {
+  if (!wss) return Promise.resolve();
+  for (const client of wss.clients) {
+    client.close(1001, "Server shutting down");
+  }
+  return new Promise((resolve) => wss.close(() => resolve()));
+}
+
+module.exports = { initWebSocket, closeWebSocket };
