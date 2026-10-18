@@ -170,6 +170,24 @@ describe.each([
   });
 });
 
+describe('runCpp /tmp mounts', () => {
+  // Docker mounts --tmpfs as noexec unless told otherwise. The run step copies
+  // the compiled binary into /tmp and executes it, so it needs `exec`; the
+  // compile step never executes from /tmp and keeps noexec.
+  it('allows exec on the run step only', async () => {
+    fakeDocker((cmd, stdin) => (cmd.includes('g++') ? {} : { stdout: addNumbers(stdin) }));
+
+    await runCpp({ userCode: 'x', driverCode: 'y', testCases });
+
+    const tmpfs = (cmd) => cmd.match(/--tmpfs (\S+)/)[1].split(':')[1].split(',');
+    const [compileCmd, ...runCmds] = exec.mock.calls.map(([cmd]) => cmd);
+    expect(tmpfs(compileCmd)).not.toContain('exec');
+    for (const cmd of runCmds) {
+      expect(tmpfs(cmd)).toContain('exec');
+    }
+  });
+});
+
 describe('runPython', () => {
   const input = { userCode: 'print(sum(map(int, input().split())))', testCases };
 
