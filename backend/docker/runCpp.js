@@ -76,7 +76,7 @@ docker run --rm -i \
   --cap-drop ALL \
   --security-opt no-new-privileges \
   --read-only \
-  --tmpfs /tmp:rw,nosuid,size=32m \
+  --tmpfs /tmp:rw,exec,nosuid,size=32m \
   --user nobody \
   -v "${workDir}:/app:ro" \
   codeleet-cpp \
