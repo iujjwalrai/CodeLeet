@@ -1,0 +1,9 @@
+node_modules
+dist
+coverage
+# Keep local .env out of the build: Vite would bake its URLs into the bundle
+# and bypass the same-origin default in src/api/urls.js
+.env
+.env.*
+Dockerfile
+.dockerignore

@@ -2,6 +2,7 @@ import React, { useState, useEffect, useMemo } from "react";
 import { Play, Send, Clock, ChevronLeft, Check, X, Zap, RefreshCcw } from "lucide-react";
 import Editor from "@monaco-editor/react";
 import axios from "../api/axios";
+import { wsUrl } from "../api/urls";
 import { useLocation, useNavigate } from "react-router-dom";
 import LogoutButton from "../components/Logout";
 import { useAuth } from "../context/AuthContext";
@@ -99,7 +100,7 @@ const ProblemPage = ({ problemId = "1" }) => {
       console.log({ problemId: problem._id, language, code, customInput });
       const response = await axios.post("/api/submissions/run", { problemId: problem._id, language, code, customInput });
       console.log(response.data);
-      const ws = new WebSocket(import.meta.env.VITE_API_BASE_URL_WS);
+      const ws = new WebSocket(wsUrl());
       ws.onopen = () => { ws.send(JSON.stringify({ type: "RUN", jobId: response.data.jobId })); };
       console.log("subscribed");
       ws.onmessage = (event) => {
@@ -132,7 +133,7 @@ const ProblemPage = ({ problemId = "1" }) => {
       console.log({ problemId: problem._id, language, code });
       const response = await axios.post("/api/submissions/", { problemId: problem._id, language, code });
       console.log(response.data);
-      const ws = new WebSocket(import.meta.env.VITE_API_BASE_URL_WS);
+      const ws = new WebSocket(wsUrl());
       ws.onopen = () => { ws.send(JSON.stringify({ type: "SUBMIT", jobId: response.data.jobId })); };
       console.log("subscribed for submission");
       ws.onmessage = (event) => {

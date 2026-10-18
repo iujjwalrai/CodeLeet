@@ -3,6 +3,7 @@ import { motion } from "framer-motion";
 import { Eye, EyeOff, Chrome, Loader2 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import axios from "../api/axios";
+import { API_BASE_URL } from "../api/urls";
 import { useForm } from "react-hook-form";
 import Navbar from "../components/Navbar";
 import toast from "react-hot-toast";
@@ -22,7 +23,7 @@ const RegisterPage = () => {
 
   const handleGoogleAuth = () => {
     window.location.href =
-      import.meta.env.VITE_API_BASE_URL + "/api/auth/google";
+      API_BASE_URL + "/api/auth/google";
   };
 
 

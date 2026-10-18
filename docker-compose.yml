@@ -1,0 +1,143 @@
+name: codeleet
+
+# ---------- shared settings ----------
+
+# Environment for api and both workers
+x-backend-env: &backend-env
+  MONGODB_URI: mongodb://mongo:27017/codeleet
+  REDIS_URL: redis://redis:6379
+  JWT_SECRET: ${JWT_SECRET:?set JWT_SECRET in .env}
+  # Must not be empty: passport-google-oauth20 throws at startup without it
+  GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-not-configured}
+  GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-not-configured}
+  FRONTEND_URL: ${FRONTEND_URL:-http://localhost:8080}
+
+# Everything both worker pools share
+x-worker: &worker
+  build:
+    context: ./backend
+    target: worker
+  image: codeleet-worker
+  environment:
+    <<: *backend-env
+    CODE_TMP_DIR: ${CODE_TMP_DIR:-/tmp/codeleet-jobs}
+  volumes:
+    # Lets the worker start sandbox containers on the host's Docker daemon
+    - /var/run/docker.sock:/var/run/docker.sock
+    # Same path on both sides, so the paths the worker passes to
+    # `docker run -v` also exist on the host
+    - ${CODE_TMP_DIR:-/tmp/codeleet-jobs}:${CODE_TMP_DIR:-/tmp/codeleet-jobs}
+  # Group that owns the Docker socket: 0 on Docker Desktop, often 999 on Linux
+  group_add:
+    - "${DOCKER_GID:-0}"
+  init: true
+  # Longer than the workers' 30s shutdown timeout
+  stop_grace_period: 35s
+  depends_on:
+    mongo:
+      condition: service_healthy
+    redis:
+      condition: service_healthy
+  networks: [core]
+  restart: unless-stopped
+
+# ---------- services ----------
+
+services:
+  mongo:
+    image: mongo:7
+    volumes:
+      - mongo-data:/data/db
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks: [core]
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    # Append-only file keeps queued jobs across restarts
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks: [core]
+    restart: unless-stopped
+
+  api:
+    build:
+      context: ./backend
+      target: api
+    image: codeleet-api
+    environment: *backend-env
+    # Healthcheck comes from the Dockerfile's HEALTHCHECK
+    # Longer than the API's 10s shutdown timeout
+    stop_grace_period: 15s
+    depends_on:
+      mongo:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks: [edge, core]
+    restart: unless-stopped
+
+  submission-worker:
+    <<: *worker
+
+  run-worker:
+    <<: *worker
+    command: ["node", "worker/runWorker.js"]
+
+  gateway:
+    build: ./client
+    image: codeleet-gateway
+    # The only port exposed to the host
+    ports:
+      - "8080:80"
+    depends_on:
+      # nginx won't start until the "api" hostname resolves
+      api:
+        condition: service_healthy
+    networks: [edge]
+    restart: unless-stopped
+
+  # ---------- sandbox images ----------
+  # Never run; they only build/pull the images the workers ask the host
+  # daemon for. Not started by a plain `docker compose up`.
+  #   docker compose --profile sandbox build
+  #   docker compose --profile sandbox pull sandbox-python
+
+  sandbox-cpp:
+    build:
+      context: ./backend/docker
+      dockerfile: Dockerfile.cpp
+    image: codeleet-cpp
+    profiles: [sandbox]
+
+  sandbox-java:
+    build:
+      context: ./backend/docker
+      dockerfile: Dockerfile.java
+    image: codeleet-java
+    profiles: [sandbox]
+
+  # Pre-pulled so the first Python run doesn't spend its 5s timeout downloading
+  sandbox-python:
+    image: python:3.12-alpine
+    profiles: [sandbox]
+
+# ---------- networks & volumes ----------
+
+networks:
+  edge: {}   # gateway <-> api
+  core: {}   # api/workers <-> mongo/redis
+
+volumes:
+  mongo-data:
+  redis-data:
