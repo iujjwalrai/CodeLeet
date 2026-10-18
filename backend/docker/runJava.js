@@ -25,6 +25,9 @@ module.exports = async function runJava({
     fs.chmodSync(baseDir, 0o777);
   }
 
+  // Sandbox image. Overridable so production can run versioned registry images.
+  const image = process.env.SANDBOX_IMAGE_JAVA || "codeleet-java";
+
   const jobId = uuidv4();
   const workDir = fs.mkdtempSync(path.join(baseDir, `java-${jobId}-`));
   fs.chmodSync(workDir, 0o777); // Let nobody user read/write to this directory
@@ -50,7 +53,7 @@ docker run --rm \
   --tmpfs /tmp:rw,nosuid,size=32m \
   --user nobody \
   -v "${workDir}:/app" \
-  codeleet-java \
+  ${image} \
   sh -c "cp /app/*.java /tmp/ && cd /tmp && javac Main.java Solution.java && cp /tmp/*.class /app/"
 `;
 
@@ -85,7 +88,7 @@ docker run --rm -i \
   --tmpfs /tmp:rw,nosuid,size=32m \
   --user nobody \
   -v "${workDir}:/app:ro" \
-  codeleet-java \
+  ${image} \
   sh -c "cp /app/*.class /tmp/ && cd /tmp && java -Xmx180m -Xss512k -XX:MaxMetaspaceSize=64m Main"
 `;
 

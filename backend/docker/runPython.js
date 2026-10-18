@@ -70,7 +70,7 @@ docker run --rm -i \\
   --tmpfs /tmp:rw,noexec,nosuid,size=16m \\
   --user nobody \\
   -v "${workDir}:/app:ro" \\
-  python:3.12-alpine \\
+  ${process.env.SANDBOX_IMAGE_PYTHON || "python:3.12-alpine"} \\
   sh -c "cp /app/main.py /app/runner.py /tmp/ && python3 /tmp/runner.py"
 `.trim();
 

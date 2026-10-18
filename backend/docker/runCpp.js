@@ -20,6 +20,9 @@ module.exports = async function runCpp({
     fs.mkdirSync(baseDir, { recursive: true });
   }
 
+  // Sandbox image. Overridable so production can run versioned registry images.
+  const image = process.env.SANDBOX_IMAGE_CPP || "codeleet-cpp";
+
   const jobId = uuidv4();
   const workDir = fs.mkdtempSync(path.join(baseDir, `cpp-${jobId}-`));
 
@@ -44,7 +47,7 @@ docker run --rm \
   --tmpfs /tmp:rw,nosuid,size=32m \
   --user nobody \
   -v "${workDir}:/app" \
-  codeleet-cpp \
+  ${image} \
   sh -c "cp /app/*.cpp /tmp/ && cd /tmp && g++ -std=c++17 Main.cpp Solution.cpp -O2 -o /app/main"
 `;
 
@@ -79,7 +82,7 @@ docker run --rm -i \
   --tmpfs /tmp:rw,exec,nosuid,size=32m \
   --user nobody \
   -v "${workDir}:/app:ro" \
-  codeleet-cpp \
+  ${image} \
   sh -c "cp /app/main /tmp/ && chmod +x /tmp/main && cd /tmp && ./main"
 `;
 
