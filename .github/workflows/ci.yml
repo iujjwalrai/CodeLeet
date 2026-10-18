@@ -22,8 +22,8 @@ jobs:
     name: Docker Build
     runs-on: ubuntu-latest
   
-  env:
-    JWT_SECRET: ci-placeholder
+    env:
+      JWT_SECRET: ci-placeholder
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
