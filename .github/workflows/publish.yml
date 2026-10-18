@@ -1,25 +1,21 @@
 name: Publish images
 
-# Runs only after the CI workflow passes for a push to main, so broken code is
-# never published. Each image is tagged :latest and :<7-char commit SHA>.
+# Called by ci.yml after all test jobs pass on a push to main, so broken code
+# is never published. Each image is tagged :latest and :<7-char commit SHA>.
 on:
-  workflow_run:
-    workflows: [CI]
-    types: [completed]
-    branches: [main]
+  workflow_call:
 
 permissions:
   contents: read
   packages: write
 
 concurrency:
-  group: publish-${{ github.event.workflow_run.head_sha }}
+  group: publish-${{ github.sha }}
   cancel-in-progress: false
 
 jobs:
   publish:
     name: ${{ matrix.name }}
-    if: github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push'
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -45,8 +41,6 @@ jobs:
     steps:
       - name: Checkout the commit CI tested
         uses: actions/checkout@v4
-        with:
-          ref: ${{ github.event.workflow_run.head_sha }}
 
       # QEMU lets the amd64 runner build arm64 images
       - name: Set up QEMU
@@ -65,7 +59,7 @@ jobs:
       - name: Compute tags
         id: tags
         env:
-          SHA: ${{ github.event.workflow_run.head_sha }}
+          SHA: ${{ github.sha }}
         run: |
           image="ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/${{ matrix.name }}"
           echo "tags=${image}:latest,${image}:${SHA::7}" >> "$GITHUB_OUTPUT"
