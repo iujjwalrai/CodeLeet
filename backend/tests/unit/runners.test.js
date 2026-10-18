@@ -273,6 +273,29 @@ describe('CODE_TMP_DIR', () => {
   });
 });
 
+describe('sandbox image overrides', () => {
+  afterEach(() => {
+    delete process.env.SANDBOX_IMAGE_CPP;
+    delete process.env.SANDBOX_IMAGE_JAVA;
+    delete process.env.SANDBOX_IMAGE_PYTHON;
+  });
+
+  it.each([
+    ['runCpp', 'SANDBOX_IMAGE_CPP', runCpp, 'g++'],
+    ['runJava', 'SANDBOX_IMAGE_JAVA', runJava, 'javac'],
+    ['runPython', 'SANDBOX_IMAGE_PYTHON', runPython, null],
+  ])('%s runs every container from %s when it is set', async (_name, envVar, run, compiler) => {
+    process.env[envVar] = 'ghcr.io/example/sandbox:abc123';
+    fakeDocker((cmd, stdin) => (compiler && cmd.includes(compiler) ? {} : { stdout: addNumbers(stdin) }));
+
+    await run({ userCode: 'x', driverCode: 'y', testCases });
+
+    for (const [cmd] of exec.mock.calls) {
+      expect(cmd).toMatch(/\sghcr\.io\/example\/sandbox:abc123\s/);
+    }
+  });
+});
+
 describe('runJavaScript', () => {
   // Known bug: docker/runJavaScript.js is empty, so the workers'
   // `runJavaScript(payload)` throws "runJavaScript is not a function" and every

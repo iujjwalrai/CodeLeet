@@ -1,0 +1,139 @@
+# Production overrides, layered on top of docker-compose.yml:
+#
+#   COMPOSE="docker compose -f docker-compose.yml -f docker-compose.prod.yml"
+#   $COMPOSE pull                       # app images from GHCR
+#   $COMPOSE --profile sandbox pull     # sandbox images (cpp, java, python)
+#   $COMPOSE up -d
+#
+# Variables come from .env on the server (see .env.prod.example).
+# Differences from local: MongoDB is Atlas (the mongo container never starts),
+# images are pulled from GHCR instead of built, Caddy terminates HTTPS, and
+# every service gets restart/log/resource limits.
+
+# ---------- shared settings ----------
+
+x-prod-env: &prod-env
+  MONGODB_URI: ${MONGODB_URI:?set MONGODB_URI (MongoDB Atlas) in .env}
+  FRONTEND_URL: ${FRONTEND_URL:?set FRONTEND_URL (e.g. https://codeleet.me) in .env}
+
+# Rotate container logs so they can't fill the server's disk
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
+x-prod-worker: &prod-worker
+  image: ${REGISTRY:-ghcr.io/iujjwalrai}/codeleet-worker:${TAG:-latest}
+  build: !reset null
+  environment:
+    <<: *prod-env
+    CODE_TMP_DIR: ${CODE_TMP_DIR:-/var/lib/codeleet/jobs}
+    # Sandboxes are versioned with the app
+    SANDBOX_IMAGE_CPP: ${REGISTRY:-ghcr.io/iujjwalrai}/codeleet-cpp:${TAG:-latest}
+    SANDBOX_IMAGE_JAVA: ${REGISTRY:-ghcr.io/iujjwalrai}/codeleet-java:${TAG:-latest}
+  volumes: !override
+    - /var/run/docker.sock:/var/run/docker.sock
+    - ${CODE_TMP_DIR:-/var/lib/codeleet/jobs}:${CODE_TMP_DIR:-/var/lib/codeleet/jobs}
+  # No default: on Linux this differs per server (stat -c %g /var/run/docker.sock)
+  group_add: !override
+    - "${DOCKER_GID:?set DOCKER_GID in .env (stat -c %g /var/run/docker.sock)}"
+  # mongo isn't running in production; only wait for redis
+  depends_on: !override
+    redis:
+      condition: service_healthy
+  restart: always
+  logging: *logging
+
+# ---------- services ----------
+
+services:
+  # MongoDB Atlas is used instead. The profile keeps this container from
+  # starting unless explicitly asked for (--profile local-db).
+  mongo:
+    profiles: [local-db]
+
+  redis:
+    # noeviction: BullMQ requires that Redis never silently drops queued jobs
+    command: ["redis-server", "--appendonly", "yes", "--maxmemory", "200mb", "--maxmemory-policy", "noeviction"]
+    deploy:
+      resources:
+        limits: { cpus: "0.5", memory: 256M }
+    restart: always
+    logging: *logging
+
+  api:
+    image: ${REGISTRY:-ghcr.io/iujjwalrai}/codeleet-api:${TAG:-latest}
+    build: !reset null
+    environment: *prod-env
+    depends_on: !override
+      redis:
+        condition: service_healthy
+    deploy:
+      # Keep at 1 until nginx re-resolves replicas (ISSUES #6, Phase 2)
+      replicas: ${API_REPLICAS:-1}
+      resources:
+        limits: { cpus: "0.5", memory: 512M }
+    restart: always
+    logging: *logging
+
+  submission-worker:
+    <<: *prod-worker
+    deploy:
+      replicas: ${SUBMISSION_WORKER_REPLICAS:-2}
+      resources:
+        limits: { cpus: "0.5", memory: 256M }
+
+  run-worker:
+    <<: *prod-worker
+    command: ["node", "worker/runWorker.js"]
+    deploy:
+      replicas: ${RUN_WORKER_REPLICAS:-1}
+      resources:
+        limits: { cpus: "0.5", memory: 256M }
+
+  gateway:
+    image: ${REGISTRY:-ghcr.io/iujjwalrai}/codeleet-gateway:${TAG:-latest}
+    build: !reset null
+    # Not exposed directly; Caddy is the only public entry point
+    ports: !reset []
+    deploy:
+      resources:
+        limits: { cpus: "0.25", memory: 128M }
+    restart: always
+    logging: *logging
+
+  # HTTPS entry point: automatic Let's Encrypt certificates for $DOMAIN
+  caddy:
+    image: caddy:2.10-alpine
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"   # HTTP/3
+    environment:
+      DOMAIN: ${DOMAIN:?set DOMAIN (e.g. codeleet.me) in .env}
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data       # certificates; keep this volume
+      - caddy-config:/config
+    depends_on:
+      - gateway
+    networks: [edge]
+    deploy:
+      resources:
+        limits: { cpus: "0.25", memory: 128M }
+    restart: always
+    logging: *logging
+
+  # Sandbox images come from GHCR too (pulled with --profile sandbox)
+  sandbox-cpp:
+    image: ${REGISTRY:-ghcr.io/iujjwalrai}/codeleet-cpp:${TAG:-latest}
+    build: !reset null
+
+  sandbox-java:
+    image: ${REGISTRY:-ghcr.io/iujjwalrai}/codeleet-java:${TAG:-latest}
+    build: !reset null
+
+volumes:
+  caddy-data:
+  caddy-config:
