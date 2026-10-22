@@ -1,4 +1,5 @@
 // /api/controllers/submissionController.js
+const mongoose = require('mongoose');
 const Submission = require('../models/Submission');
 const Problem = require('../models/Problem');
 const User = require('../models/User');
@@ -65,6 +66,7 @@ const getUserSubmissions = async (req, res) => {
 
   try {
     const submissions = await Submission.find(filters)
+      .select('-analysis') // can be large; GET /api/submissions/:id has it
       .populate('problem', 'title slug difficulty')
       .sort({ createdAt: -1 })
       .limit(Number(limit));
@@ -73,6 +75,25 @@ const getUserSubmissions = async (req, res) => {
   } catch (error) {
     console.error('Get submissions error:', error.message);
     res.status(500).json({ message: 'Unable to load submissions.' });
+  }
+};
+
+// One of the caller's own submissions, including what the judge measured
+const getSubmission = async (req, res) => {
+  if (!mongoose.isValidObjectId(req.params.id)) {
+    return res.status(404).json({ message: 'Submission not found' });
+  }
+
+  try {
+    const submission = await Submission.findOne({ _id: req.params.id, user: req.user._id })
+      .populate('problem', 'title slug difficulty');
+    if (!submission) {
+      return res.status(404).json({ message: 'Submission not found' });
+    }
+    res.json(submission);
+  } catch (error) {
+    console.error('Get submission error:', error.message);
+    res.status(500).json({ message: 'Unable to load submission.' });
   }
 };
 
@@ -131,5 +152,6 @@ const getSubmissionHeatmap = async (req, res) => {
 module.exports = {
   createSubmission,
   getUserSubmissions,
+  getSubmission,
   getSubmissionHeatmap
 };

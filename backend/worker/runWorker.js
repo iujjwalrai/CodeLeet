@@ -85,6 +85,7 @@ const worker = new Worker(
         error: result.error || "",
         time: result.time || 0,
         memory: result.memory || 0,
+        resources: result.resources || null,
       });
       return {
         status: result.status,

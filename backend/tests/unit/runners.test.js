@@ -102,6 +102,11 @@ describe.each([
     expect(result).toMatchObject({ status: 'accepted', passedCount: 3, totalCount: 3, error: null, time: 6, memory: 2050 });
     expect(result.resources).toMatchObject({ testIndex: 2, peakKb: 2050, cpuMs: 5 });
     expect(result.resources.timeline).toEqual([{ t: 0, rssKb: 100, cpuMs: 0 }, { t: 3, rssKb: 2048, cpuMs: 3 }]);
+    expect(result.resources.tests).toEqual([
+      { wallMs: 4, peakKb: 2048 },
+      { wallMs: 5, peakKb: 2049 },
+      { wallMs: 6, peakKb: 2050 },
+    ]);
   });
 
   it('runs everything in one container, with code, inputs and job config in the mounted folder', async () => {

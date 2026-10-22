@@ -9,6 +9,19 @@ const failedTestCaseSchema = new mongoose.Schema(
   { _id: false }
 );
 
+// What cl-meter measured during judging; see resourcesFrom in docker/judge.js
+const resourcesSchema = new mongoose.Schema(
+  {
+    testIndex: Number,
+    peakKb: Number,
+    cpuMs: Number,
+    wallMs: Number,
+    timeline: [{ _id: false, t: Number, rssKb: Number, cpuMs: Number }],
+    tests: [{ _id: false, wallMs: Number, peakKb: Number }],
+  },
+  { _id: false }
+);
+
 const submissionSchema = new mongoose.Schema(
   {
     user: {
@@ -67,6 +80,10 @@ const submissionSchema = new mongoose.Schema(
 
     memory: {
       type: Number, 
+    },
+
+    analysis: {
+      resources: resourcesSchema,
     },
   },
   {

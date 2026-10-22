@@ -23,6 +23,7 @@
  *   stop_on_limit  1 = stop after a test hits a limit or is killed
  */
 #define _GNU_SOURCE
+#include <dirent.h>
 #include <errno.h>
 #include <fcntl.h>
 #include <signal.h>
@@ -125,7 +126,7 @@ static long read_rss_kb(pid_t pid) {
   return ok ? resident * (sysconf(_SC_PAGESIZE) / 1024) : -1;
 }
 
-static double read_cpu_ms(pid_t pid) {
+static double read_stat_cpu_ms(pid_t pid) {
   char path[64], buf[1024];
   snprintf(path, sizeof path, "/proc/%d/stat", (int)pid);
   FILE *f = fopen(path, "r");
@@ -140,6 +141,31 @@ static double read_cpu_ms(pid_t pid) {
   unsigned long utime = 0, stime = 0;
   if (sscanf(p + 2, "%*c %*d %*d %*d %*d %*d %*u %*u %*u %*u %*u %lu %lu", &utime, &stime) != 2) return -1;
   return (utime + stime) * 1000.0 / sysconf(_SC_CLK_TCK);
+}
+
+/* CPU time of all the program's threads, from each thread's schedstat
+   (nanoseconds). /proc/<pid>/stat only moves in 10 ms ticks, too coarse for
+   samples 5 ms apart. Threads that already exited drop out of this sum, so
+   the caller keeps the running maximum. */
+static double read_cpu_ms(pid_t pid) {
+  char path[300];
+  snprintf(path, sizeof path, "/proc/%d/task", (int)pid);
+  DIR *d = opendir(path);
+  if (!d) return -1;
+  unsigned long long total = 0;
+  int found = 0;
+  struct dirent *e;
+  while ((e = readdir(d))) {
+    if (e->d_name[0] == '.') continue;
+    snprintf(path, sizeof path, "/proc/%d/task/%s/schedstat", (int)pid, e->d_name);
+    FILE *f = fopen(path, "r");
+    if (!f) continue;
+    unsigned long long ns;
+    if (fscanf(f, "%llu", &ns) == 1) { total += ns; found = 1; }
+    fclose(f);
+  }
+  closedir(d);
+  return found ? total / 1e6 : read_stat_cpu_ms(pid);
 }
 
 /* ---------------- running a child ---------------- */
@@ -184,7 +210,7 @@ static void watch(pid_t pid, long limit_ms, long mem_kb, int track, struct outco
   memset(o, 0, sizeof *o);
   if (track) o->samples = malloc(sizeof(struct sample) * MAX_SAMPLES);
   int stride = 1, tick = 0, killed = 0;
-  double start = now_ms();
+  double start = now_ms(), cpu_seen = 0;
 
   for (;;) {
     int st;
@@ -204,9 +230,11 @@ static void watch(pid_t pid, long limit_ms, long mem_kb, int track, struct outco
     if (track && !killed) {
       long rss = read_rss_kb(pid);
       double cpu = read_cpu_ms(pid);
-      if (rss >= 0 && cpu >= 0) {
+      /* rss 0: caught mid-exit, after the memory was released */
+      if (rss > 0 && cpu >= 0) {
         if (rss > o->peak_kb) o->peak_kb = rss;
-        add_sample(o, &stride, &tick, t, rss, cpu);
+        if (cpu > cpu_seen) cpu_seen = cpu;
+        add_sample(o, &stride, &tick, t, rss, cpu_seen);
       }
       if (mem_kb > 0 && rss > mem_kb) { o->mle = 1; killed = 1; kill(-pid, SIGKILL); }
     }

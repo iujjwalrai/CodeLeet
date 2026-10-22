@@ -143,3 +143,48 @@ describe('GET /api/submissions/me', () => {
     expect(res.body[0].problem._id).toBe(a._id.toString());
   });
 });
+
+describe('GET /api/submissions/:id', () => {
+  const analysis = {
+    resources: {
+      testIndex: 0, peakKb: 2048, cpuMs: 3, wallMs: 4,
+      timeline: [{ t: 0, rssKb: 100, cpuMs: 0 }],
+      tests: [{ wallMs: 4, peakKb: 2048 }],
+    },
+  };
+
+  it('returns the caller\'s submission with its analysis', async () => {
+    const user = await createUser();
+    const problem = await createProblem({ title: 'Two Sum' });
+    const submission = await createSubmission(user, problem, { status: 'accepted', analysis });
+
+    const res = await request(app)
+      .get(`/api/submissions/${submission._id}`)
+      .set('Authorization', authFor(user).bearer);
+
+    expect(res.status).toBe(200);
+    expect(res.body).toMatchObject({ status: 'accepted', code: 'print(1)', analysis });
+    expect(res.body.problem.title).toBe('Two Sum');
+  });
+
+  it("returns 404 for someone else's submission or a malformed id", async () => {
+    const user = await createUser();
+    const other = await createUser();
+    const submission = await createSubmission(other, await createProblem());
+
+    for (const id of [submission._id, 'not-an-id']) {
+      const res = await request(app).get(`/api/submissions/${id}`).set('Authorization', authFor(user).bearer);
+      expect(res.status).toBe(404);
+    }
+  });
+
+  it('is left out of the list endpoint', async () => {
+    const user = await createUser();
+    await createSubmission(user, await createProblem(), { analysis });
+
+    const res = await request(app).get('/api/submissions/me').set('Authorization', authFor(user).bearer);
+
+    expect(res.body[0].analysis).toBeUndefined();
+    expect(res.body[0].code).toBe('print(1)');
+  });
+});

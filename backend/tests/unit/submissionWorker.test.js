@@ -46,6 +46,32 @@ describe('processSubmission', () => {
     expect(stored.failedTestCase).toBeUndefined();
   });
 
+  it('saves and publishes what the judge measured', async () => {
+    const resources = {
+      testIndex: 1, peakKb: 3000, cpuMs: 12, wallMs: 14,
+      timeline: [{ t: 0, rssKb: 900, cpuMs: 0 }, { t: 5, rssKb: 3000, cpuMs: 4 }],
+      tests: [{ wallMs: 2, peakKb: 1200 }, { wallMs: 14, peakKb: 3000 }],
+    };
+    runPython.mockResolvedValue({ status: 'accepted', output: 'ok', time: 14, memory: 3000, resources });
+    const { job, submission } = await jobFor();
+
+    await processSubmission(job);
+
+    const stored = await Submission.findById(submission._id).lean();
+    expect(stored.analysis.resources).toEqual(resources);
+    expect(published().at(-1).data.resources).toEqual(resources);
+  });
+
+  it('stores no resources when the runner measured none', async () => {
+    runPython.mockResolvedValue({ status: 'accepted', output: 'ok', time: 1 });
+    const { job, submission } = await jobFor();
+
+    await processSubmission(job);
+
+    expect((await Submission.findById(submission._id).lean()).analysis).toBeUndefined();
+    expect(published().at(-1).data.resources).toBeNull();
+  });
+
   it('saves the failing test case on wrong answer', async () => {
     runPython.mockResolvedValue({
       status: 'wrong_answer',

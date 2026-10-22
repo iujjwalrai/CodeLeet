@@ -47,6 +47,7 @@ async function saveVerdict(submissionId, result) {
       failedTestCase: tc
         ? { input: tc.input, expected: tc.output, output: result.output }
         : undefined,
+      "analysis.resources": result.resources || undefined,
     }
   );
 }
@@ -139,6 +140,7 @@ async function processSubmission(job) {
         error: result.error || "",
         time: result.time || 0,
         memory: result.memory || 0,
+        resources: result.resources || null,
       });
       return {
         type: "SUBMIT",
@@ -152,6 +154,7 @@ async function processSubmission(job) {
         error: result.error || "",
         time: result.time || 0,
         memory: result.memory || 0,
+        resources: result.resources || null,
       };
 
     } catch (err) {
