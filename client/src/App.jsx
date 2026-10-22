@@ -17,18 +17,19 @@ const App = () => {
         toastOptions={{
           duration: 3500,
           style: {
-            background: '#1a1a2e',
-            color: '#fff',
-            border: '1px solid rgba(255,255,255,0.1)',
-            borderRadius: '12px',
+            background: 'var(--surface)',
+            color: 'var(--fg)',
+            border: '1px solid var(--line)',
+            borderRadius: '10px',
             fontSize: '14px',
-            padding: '12px 16px',
+            padding: '10px 14px',
+            boxShadow: 'var(--elev-pop)',
           },
           success: {
-            iconTheme: { primary: '#a855f7', secondary: '#fff' },
+            iconTheme: { primary: 'var(--ok)', secondary: 'var(--surface)' },
           },
           error: {
-            iconTheme: { primary: '#f43f5e', secondary: '#fff' },
+            iconTheme: { primary: 'var(--bad)', secondary: 'var(--surface)' },
           },
         }}
       />

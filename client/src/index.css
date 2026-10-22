@@ -1,1 +1,345 @@
 @import "tailwindcss";
+
+/* `dark:` utilities follow <html data-theme="dark"> rather than the OS */
+@custom-variant dark (&:where([data-theme="dark"], [data-theme="dark"] *));
+
+/* ────────────────────────────────────────────────────────────
+   Design tokens. Raw values live in :root / [data-theme="dark"];
+   @theme inline maps them to Tailwind utilities (bg-surface,
+   text-dim, border-line, …). Plain stylesheets use var(--x).
+   ──────────────────────────────────────────────────────────── */
+:root {
+  --bg: #ffffff;
+  --subtle: #fafafa;
+  --surface: #ffffff;
+  --hover: #f4f4f5;
+  --line: #e4e4e7;
+  --line-2: #d4d4d8;
+
+  --fg: #09090b;
+  --dim: #52525b;
+  --faint: #a1a1aa;
+
+  --accent: #059669;
+  --accent-hover: #047857;
+  --accent-fg: #ffffff;
+  --accent-soft: rgb(5 150 105 / 0.1);
+
+  --ok: #16a34a;
+  --bad: #dc2626;
+  --warn: #d97706;
+  --info: #2563eb;
+
+  --elev-card: 0 1px 2px rgb(0 0 0 / 0.04), 0 1px 3px rgb(0 0 0 / 0.04);
+  --elev-pop: 0 12px 32px -8px rgb(0 0 0 / 0.16);
+}
+
+[data-theme="dark"] {
+  --bg: #09090b;
+  --subtle: #0c0c0e;
+  --surface: #111113;
+  --hover: #1c1c1f;
+  --line: #27272a;
+  --line-2: #3f3f46;
+
+  --fg: #fafafa;
+  --dim: #a1a1aa;
+  --faint: #71717a;
+
+  --accent: #10b981;
+  --accent-hover: #34d399;
+  --accent-fg: #022c22;
+  --accent-soft: rgb(16 185 129 / 0.12);
+
+  --ok: #22c55e;
+  --bad: #f87171;
+  --warn: #fbbf24;
+  --info: #60a5fa;
+
+  --elev-card: 0 0 0 0 transparent;
+  --elev-pop: 0 16px 40px -8px rgb(0 0 0 / 0.6);
+}
+
+@theme inline {
+  --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "Geist Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
+
+  --color-bg: var(--bg);
+  --color-subtle: var(--subtle);
+  --color-surface: var(--surface);
+  --color-hover: var(--hover);
+  --color-line: var(--line);
+  --color-line-2: var(--line-2);
+  --color-fg: var(--fg);
+  --color-dim: var(--dim);
+  --color-faint: var(--faint);
+  --color-accent: var(--accent);
+  --color-accent-fg: var(--accent-fg);
+  --color-accent-soft: var(--accent-soft);
+  --color-ok: var(--ok);
+  --color-bad: var(--bad);
+  --color-warn: var(--warn);
+  --color-info: var(--info);
+
+  --shadow-card: var(--elev-card);
+  --shadow-pop: var(--elev-pop);
+}
+
+@layer base {
+  html {
+    color-scheme: light;
+  }
+  html[data-theme="dark"] {
+    color-scheme: dark;
+  }
+
+  body {
+    background: var(--bg);
+    color: var(--fg);
+    font-family: var(--font-sans);
+    font-feature-settings: "cv11", "ss01";
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  ::selection {
+    background: var(--accent-soft);
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+  }
+
+  button:not(:disabled) {
+    cursor: pointer;
+  }
+
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: var(--line-2) transparent;
+  }
+}
+
+@layer components {
+  /* Buttons */
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    height: 2.25rem;
+    padding: 0 0.875rem;
+    border-radius: 0.5rem;
+    border: 1px solid transparent;
+    font-size: 0.875rem;
+    font-weight: 500;
+    white-space: nowrap;
+    transition: background-color 0.15s, border-color 0.15s, color 0.15s, box-shadow 0.15s;
+  }
+  .btn > svg {
+    flex-shrink: 0;
+  }
+  .btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+  .btn-primary {
+    background: var(--accent);
+    color: var(--accent-fg);
+    box-shadow: 0 1px 2px rgb(0 0 0 / 0.08), inset 0 1px 0 rgb(255 255 255 / 0.12);
+  }
+  .btn-primary:hover:not(:disabled) {
+    background: var(--accent-hover);
+  }
+  .btn-secondary {
+    background: var(--surface);
+    border-color: var(--line);
+    color: var(--fg);
+    box-shadow: var(--elev-card);
+  }
+  .btn-secondary:hover:not(:disabled) {
+    background: var(--hover);
+  }
+  .btn-ghost {
+    color: var(--dim);
+  }
+  .btn-ghost:hover:not(:disabled) {
+    color: var(--fg);
+    background: var(--hover);
+  }
+  .btn-icon {
+    width: 2.25rem;
+    padding: 0;
+  }
+  .btn-sm {
+    height: 2rem;
+    padding: 0 0.75rem;
+    font-size: 0.8125rem;
+  }
+  .btn-sm.btn-icon {
+    width: 2rem;
+    padding: 0;
+  }
+  .btn-lg {
+    height: 2.75rem;
+    padding: 0 1.25rem;
+    font-size: 0.9375rem;
+  }
+
+  /* Form fields */
+  .field {
+    width: 100%;
+    height: 2.5rem;
+    padding: 0 0.75rem;
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 0.5rem;
+    color: var(--fg);
+    font-size: 0.875rem;
+    box-shadow: var(--elev-card);
+    transition: border-color 0.15s, box-shadow 0.15s;
+  }
+  textarea.field {
+    height: auto;
+    padding: 0.5rem 0.75rem;
+    resize: vertical;
+  }
+  .field::placeholder {
+    color: var(--faint);
+  }
+  .field:focus {
+    outline: none;
+    border-color: var(--accent);
+    box-shadow: 0 0 0 3px var(--accent-soft);
+  }
+  select.field {
+    appearance: none;
+    padding-right: 2rem;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%2371717a' stroke-width='2'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 0.65rem center;
+  }
+  select.field option {
+    background: var(--surface);
+    color: var(--fg);
+  }
+
+  .label {
+    display: block;
+    font-size: 0.8125rem;
+    font-weight: 500;
+    color: var(--fg);
+  }
+
+  /* Cards */
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 0.75rem;
+    box-shadow: var(--elev-card);
+  }
+
+  /* Small pill */
+  .badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.375rem;
+    height: 1.375rem;
+    padding: 0 0.5rem;
+    border-radius: 9999px;
+    font-size: 0.75rem;
+    font-weight: 500;
+    white-space: nowrap;
+  }
+  .badge-easy {
+    color: var(--ok);
+    background: color-mix(in srgb, var(--ok) 12%, transparent);
+  }
+  .badge-medium {
+    color: var(--warn);
+    background: color-mix(in srgb, var(--warn) 12%, transparent);
+  }
+  .badge-hard {
+    color: var(--bad);
+    background: color-mix(in srgb, var(--bad) 12%, transparent);
+  }
+  .badge-neutral {
+    color: var(--dim);
+    background: var(--hover);
+  }
+
+  .spinner {
+    width: 1rem;
+    height: 1rem;
+    border-radius: 9999px;
+    border: 2px solid color-mix(in srgb, currentColor 25%, transparent);
+    border-top-color: currentColor;
+    animation: cl-spin 0.7s linear infinite;
+  }
+}
+
+@keyframes cl-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* ────────────────────────────────────────────────────────────
+   Cursor glow (components/CursorGlow.jsx). Each page section sets
+   data-glow="<name>"; the glow takes that section's colour, and the
+   registered property lets the colour change animate.
+   ──────────────────────────────────────────────────────────── */
+@property --glow-color {
+  syntax: "<color>";
+  inherits: false;
+  initial-value: transparent;
+}
+
+:root {
+  --glow-emerald: #10b981;
+  --glow-cyan: #06b6d4;
+  --glow-violet: #8b5cf6;
+  --glow-amber: #f59e0b;
+  --glow-alpha: 16%;
+}
+[data-theme="dark"] {
+  --glow-alpha: 24%;
+}
+
+.cursor-glow {
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background:
+    radial-gradient(320px circle at var(--mx, 50%) var(--my, -30%),
+      color-mix(in srgb, var(--glow-color) var(--glow-alpha), transparent),
+      transparent 70%);
+  transition: --glow-color 0.7s ease;
+}
+.cursor-glow-subtle {
+  opacity: 0.6;
+}
+
+/* Navbar spotlight: a gradient border (and faint fill) under the cursor */
+.nav-spotlight,
+.nav-spotlight-fill {
+  position: absolute;
+  inset: -1px;
+  border-radius: inherit;
+  pointer-events: none;
+  opacity: var(--so, 0);
+  transition: opacity 0.2s;
+}
+.nav-spotlight {
+  padding: 1px;
+  background: radial-gradient(200px circle at var(--sx, -999px) var(--sy, -999px), var(--accent), transparent 70%);
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  mask-composite: exclude;
+}
+.nav-spotlight-fill {
+  background: radial-gradient(160px circle at var(--sx, -999px) var(--sy, -999px), var(--accent-soft), transparent 70%);
+}

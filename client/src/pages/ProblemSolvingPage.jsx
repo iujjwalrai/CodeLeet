@@ -1,19 +1,127 @@
 import React, { useState, useEffect, useMemo } from "react";
-import { Play, Send, Clock, ChevronLeft, Check, X, Zap, RefreshCcw } from "lucide-react";
+import {
+  Play, Send, Clock, ChevronLeft, Check, X, RotateCcw, FileText, History, FlaskConical,
+  Terminal, AlertTriangle,
+} from "lucide-react";
 import Editor from "@monaco-editor/react";
+import { Panel, PanelGroup, PanelResizeHandle } from "react-resizable-panels";
 import axios from "../api/axios";
 import { wsUrl } from "../api/urls";
 import { useLocation, useNavigate } from "react-router-dom";
 import LogoutButton from "../components/Logout";
+import { Logo, ThemeToggle } from "../components/Navbar";
 import { useAuth } from "../context/AuthContext";
+import { useTheme } from "../theme";
 import toast from "react-hot-toast";
 import "./ProblemSolvingPage.css";
 
+/* Monaco themes matching the app's light and dark palettes */
+const defineCodeleetThemes = (monaco) => {
+  monaco.editor.defineTheme("codeleet-dark", {
+    base: "vs-dark",
+    inherit: true,
+    rules: [
+      { token: "comment", foreground: "71717a", fontStyle: "italic" },
+      { token: "keyword", foreground: "e879f9" },
+      { token: "string", foreground: "6ee7b7" },
+      { token: "number", foreground: "fbbf24" },
+      { token: "type", foreground: "67e8f9" },
+      { token: "type.identifier", foreground: "67e8f9" },
+      { token: "delimiter", foreground: "a1a1aa" },
+    ],
+    colors: {
+      "editor.background": "#111113",
+      "editor.foreground": "#fafafa",
+      "editorLineNumber.foreground": "#3f3f46",
+      "editorLineNumber.activeForeground": "#a1a1aa",
+      "editor.lineHighlightBackground": "#18181b",
+      "editor.lineHighlightBorder": "#00000000",
+      "editor.selectionBackground": "#10b98133",
+      "editor.inactiveSelectionBackground": "#10b9811a",
+      "editorCursor.foreground": "#10b981",
+      "editorIndentGuide.background1": "#27272a",
+      "editorIndentGuide.activeBackground1": "#3f3f46",
+      "editorBracketHighlight.foreground1": "#a1a1aa",
+      "editorBracketHighlight.foreground2": "#67e8f9",
+      "editorBracketHighlight.foreground3": "#e879f9",
+      "editorWidget.background": "#18181b",
+      "editorWidget.border": "#27272a",
+      "scrollbarSlider.background": "#3f3f4666",
+      "scrollbarSlider.hoverBackground": "#3f3f46aa",
+    },
+  });
+  monaco.editor.defineTheme("codeleet-light", {
+    base: "vs",
+    inherit: true,
+    rules: [
+      { token: "comment", foreground: "a1a1aa", fontStyle: "italic" },
+      { token: "keyword", foreground: "c026d3" },
+      { token: "string", foreground: "059669" },
+      { token: "number", foreground: "d97706" },
+      { token: "type", foreground: "0891b2" },
+      { token: "type.identifier", foreground: "0891b2" },
+      { token: "delimiter", foreground: "52525b" },
+    ],
+    colors: {
+      "editor.background": "#ffffff",
+      "editor.foreground": "#09090b",
+      "editorLineNumber.foreground": "#d4d4d8",
+      "editorLineNumber.activeForeground": "#52525b",
+      "editor.lineHighlightBackground": "#fafafa",
+      "editor.lineHighlightBorder": "#00000000",
+      "editor.selectionBackground": "#05966926",
+      "editorCursor.foreground": "#059669",
+      "editorIndentGuide.background1": "#f4f4f5",
+      "editorIndentGuide.activeBackground1": "#e4e4e7",
+      "editorBracketHighlight.foreground1": "#52525b",
+      "editorBracketHighlight.foreground2": "#0891b2",
+      "editorBracketHighlight.foreground3": "#c026d3",
+    },
+  });
+};
+
+const FINAL_STATUSES = ["accepted", "wrong_answer", "compilation_error", "runtime_error", "error"];
+
+const STATUS_LABEL = {
+  accepted: "Accepted",
+  wrong_answer: "Wrong Answer",
+  compilation_error: "Compilation Error",
+  runtime_error: "Runtime Error",
+  error: "Internal Error",
+};
+const labelOf = (s) => STATUS_LABEL[s] || (s || "").replace(/_/g, " ").replace(/\b\w/g, c => c.toUpperCase());
+
+/* Verdict status → colour tone used by the CSS */
+const toneOf = (status) =>
+  status === "accepted" ? "ok" : status === "wrong_answer" ? "bad" : status === "runtime_error" || status === "error" ? "bad" : "warn";
+
+const DIFF_BADGE = { Easy: "badge-easy", Medium: "badge-medium", Hard: "badge-hard" };
+
+/* Stack the panes vertically on narrow screens */
+const useNarrow = () => {
+  const query = "(max-width: 900px)";
+  const [narrow, setNarrow] = useState(() => typeof window !== "undefined" && window.matchMedia?.(query).matches);
+  useEffect(() => {
+    const mq = window.matchMedia?.(query);
+    if (!mq) return;
+    const on = (e) => setNarrow(e.matches);
+    mq.addEventListener("change", on);
+    return () => mq.removeEventListener("change", on);
+  }, []);
+  return narrow;
+};
+
+const Handle = ({ direction }) => (
+  <PanelResizeHandle className={`ps-handle ${direction === "horizontal" ? "ps-handle-x" : "ps-handle-y"}`} />
+);
+
 const ProblemPage = ({ problemId = "1" }) => {
   const { setUser } = useAuth();
+  const { theme } = useTheme();
+  const narrow = useNarrow();
   const [language, setLanguage] = useState("java");
   const [code, setCode] = useState("");
-  const [editorTheme, setEditorTheme] = useState("vs-dark");
+  const [editorTheme, setEditorTheme] = useState("auto");
   const [activeTab, setActiveTab] = useState("description");
   const [testResults, setTestResults] = useState([]);
   const [runStatus, setRunStatus] = useState(null);
@@ -96,6 +204,9 @@ const ProblemPage = ({ problemId = "1" }) => {
   };
 
   const handleRun = async () => {
+    // Show the running state straight away and clear the previous result
+    setRunStatus("Running");
+    setTestResults([]);
     try {
       console.log({ problemId: problem._id, language, code, customInput });
       const response = await axios.post("/api/submissions/run", { problemId: problem._id, language, code, customInput });
@@ -103,6 +214,7 @@ const ProblemPage = ({ problemId = "1" }) => {
       const ws = new WebSocket(wsUrl());
       ws.onopen = () => { ws.send(JSON.stringify({ type: "RUN", jobId: response.data.jobId })); };
       console.log("subscribed");
+      ws.onerror = () => { setRunStatus(null); toast.error("Lost connection to the judge."); };
       ws.onmessage = (event) => {
         const msg = JSON.parse(event.data);
         console.log("WebSocket message:", msg);
@@ -122,13 +234,23 @@ const ProblemPage = ({ problemId = "1" }) => {
         }
         if (data.status === "runtime_error") {
           setTestResults([{ type: "runtime_error", error: data.error, time: `${data.time} ms` }]);
+          ws.close(); return;
+        }
+        if (data.status === "error") {
+          setTestResults([{ type: "error", error: data.error || "The judge failed to run this code.", time: `${data.time ?? 0} ms` }]);
           ws.close();
         }
       };
-    } catch { toast.error("Failed to run code. Please try again."); }
+    } catch {
+      setRunStatus(null);
+      toast.error("Failed to run code. Please try again.");
+    }
   };
 
   const handleSubmit = async () => {
+    // Switch to the Result tab immediately and show a pending verdict
+    setSubmitData({ status: "pending" });
+    setActiveTab("result");
     try {
       console.log({ problemId: problem._id, language, code });
       const response = await axios.post("/api/submissions/", { problemId: problem._id, language, code });
@@ -136,17 +258,21 @@ const ProblemPage = ({ problemId = "1" }) => {
       const ws = new WebSocket(wsUrl());
       ws.onopen = () => { ws.send(JSON.stringify({ type: "SUBMIT", jobId: response.data.jobId })); };
       console.log("subscribed for submission");
+      ws.onerror = () => { setSubmitData(null); toast.error("Lost connection to the judge."); };
       ws.onmessage = (event) => {
         const msg = JSON.parse(event.data);
         setSubmitData(msg.data);
-        const finalStatuses = ["accepted", "wrong_answer", "compilation_error", "runtime_error"];
-        if (finalStatuses.includes(msg.data.status)) {
-          if (msg.data.status === "accepted") toast.success("✅ Submission Accepted!");
-          else toast.error("❌ " + msg.data.status.replace(/_/g, " ").replace(/\b\w/g, c => c.toUpperCase()));
+        if (FINAL_STATUSES.includes(msg.data.status)) {
+          if (msg.data.status === "accepted") toast.success("Submission accepted");
+          else toast.error(labelOf(msg.data.status));
           setActiveTab("result");
+          ws.close();
         }
       };
-    } catch { toast.error("Submission failed. Please try again."); }
+    } catch {
+      setSubmitData(null);
+      toast.error("Submission failed. Please try again.");
+    }
   };
 
   const languageOptions = [
@@ -154,277 +280,323 @@ const ProblemPage = ({ problemId = "1" }) => {
     { value: "cpp", label: "C++", monaco: "cpp" },
   ];
   const themeOptions = [
-    { value: "vs-dark", label: "Dark" },
-    { value: "vs-light", label: "Light" },
-    { value: "hc-black", label: "High Contrast" },
+    { value: "auto", label: "Match app" },
+    { value: "codeleet-light", label: "Light" },
+    { value: "codeleet-dark", label: "Dark" },
+    { value: "hc-black", label: "High contrast" },
   ];
+  const monacoTheme = editorTheme === "auto" ? (theme === "dark" ? "codeleet-dark" : "codeleet-light") : editorTheme;
+
+  const isRunning = runStatus === "Running";
+  const isJudging = !!submitData && !FINAL_STATUSES.includes(submitData.status);
 
   if (loading) return (
     <div className="ps-fullscreen-center">
-      <div className="ps-spinner" />
-      <span style={{ color: "#64748b", fontSize: 13 }}>Loading problem…</span>
+      <span className="spinner text-accent" />
+      <span>Loading problem…</span>
     </div>
   );
   if (error) return (
     <div className="ps-fullscreen-center">
-      <span style={{ color: "#ef4444", fontSize: 14 }}>{error}</span>
+      <AlertTriangle size={18} className="text-bad" />
+      <span className="text-bad">{error}</span>
     </div>
   );
   if (!problem) return (
     <div className="ps-fullscreen-center">
-      <span style={{ color: "#64748b" }}>Problem not found.</span>
+      <span>Problem not found.</span>
     </div>
   );
 
-  const diffCls = `ps-diff ps-diff-${problem.difficulty}`;
+  const tabs = [
+    { id: "description", label: "Description", icon: FileText },
+    { id: "submissions", label: "Submissions", icon: History },
+    { id: "result", label: "Result", icon: FlaskConical },
+  ];
+
+  /* ── left pane: description / submissions / result ── */
+  const leftPane = (
+    <div className="ps-pane">
+      <div className="ps-pane-tabs">
+        {tabs.map(({ id, label, icon: Icon }) => (
+          <button key={id}
+            className={`ps-tab ${activeTab === id ? "ps-tab-active" : ""}`}
+            onClick={() => { setActiveTab(id); if (id === "submissions") fetchMySubmissions(); }}>
+            <Icon size={14} />
+            {label}
+            {id === "result" && isJudging && <span className="ps-tab-dot" />}
+          </button>
+        ))}
+      </div>
+      <div className="ps-content">
+        {/* DESCRIPTION TAB */}
+        {activeTab === "description" && <>
+          <h1 className="ps-title">{problem.title}</h1>
+          <div className="ps-tags">
+            <span className={`badge ${DIFF_BADGE[problem.difficulty] || "badge-neutral"}`}>{problem.difficulty}</span>
+            {(problem.topics || []).map(t => <span key={t} className="badge badge-neutral capitalize">{t}</span>)}
+            {problem.stats?.acceptance != null && (
+              <span className="ps-tag-meta">Acceptance {Number(problem.stats.acceptance).toFixed(0)}%</span>
+            )}
+          </div>
+
+          <p className="ps-desc">{problem.description}</p>
+
+          {problem.examples.map((ex, i) => (
+            <div key={i} className="ps-example">
+              <h3 className="ps-example-title">Example {i + 1}</h3>
+              <div className="ps-example-body">
+                <div><span className="ps-example-key">Input</span><pre>{ex.input}</pre></div>
+                <div><span className="ps-example-key">Output</span><pre>{ex.output}</pre></div>
+                {ex.explanation && <div><span className="ps-example-key">Explanation</span><p>{ex.explanation}</p></div>}
+              </div>
+            </div>
+          ))}
+
+          {problem.constraints?.length > 0 && <>
+            <h3 className="ps-example-title">Constraints</h3>
+            <ul className="ps-constraints">
+              {problem.constraints.map((c, i) => <li key={i}><code>{c}</code></li>)}
+            </ul>
+          </>}
+        </>}
+
+        {/* SUBMISSIONS TAB */}
+        {activeTab === "submissions" && <>
+          {submissionsLoading && <div className="ps-empty"><span className="spinner" />Loading submissions…</div>}
+          {!submissionsLoading && submissions.length === 0 && (
+            <div className="ps-empty"><History size={20} />No submissions yet</div>
+          )}
+          {!submissionsLoading && submissions.length > 0 && (
+            <div className="ps-sub-list">
+              {submissions.map(sub => (
+                <button key={sub._id}
+                  className="ps-sub-item"
+                  onClick={() => { setSubmitData(sub); setActiveTab("result"); }}>
+                  <span className={`ps-sub-status ps-tone-${toneOf(sub.status)}`}>
+                    {sub.status === "accepted" ? <Check size={14} /> : <X size={14} />}
+                    {labelOf(sub.status)}
+                  </span>
+                  {sub.language && <span className="badge badge-neutral">{sub.language === "cpp" ? "C++" : sub.language}</span>}
+                  <span className="ps-sub-date">{new Date(sub.createdAt).toLocaleString()}</span>
+                </button>
+              ))}
+            </div>
+          )}
+        </>}
+
+        {/* RESULT TAB */}
+        {activeTab === "result" && <>
+          {!submitData ? (
+            <div className="ps-empty"><Send size={20} />Submit your code to see the verdict here.</div>
+          ) : isJudging ? (
+            <div className="ps-judging">
+              <span className="spinner ps-judging-spinner" />
+              <div>
+                <div className="ps-judging-title">Judging your submission</div>
+                <div className="ps-judging-sub">
+                  {submitData.status === "Running" ? "Running all test cases in the sandbox…" : "Queued, waiting for a worker…"}
+                </div>
+              </div>
+            </div>
+          ) : (
+            <div className="ps-verdict">
+              <div className={`ps-verdict-title ps-tone-${toneOf(submitData.status)}`}>
+                {labelOf(submitData.status)}
+              </div>
+              {submitData.passedCount != null && submitData.totalCount != null && (
+                <div className="ps-verdict-sub">{submitData.passedCount} / {submitData.totalCount} test cases passed</div>
+              )}
+
+              {(submitData.status === "accepted" || submitData.status === "wrong_answer") && (
+                <div className="ps-metrics">
+                  <div className="ps-metric">
+                    <span className="ps-metric-label">Runtime</span>
+                    <span className="ps-metric-value">{submitData.time ?? "—"}<small> ms</small></span>
+                  </div>
+                  <div className="ps-metric">
+                    <span className="ps-metric-label">Memory</span>
+                    <span className="ps-metric-value">{submitData.memory ?? "—"}<small> KB</small></span>
+                  </div>
+                </div>
+              )}
+
+              {submitData.passedCount != null && submitData.totalCount > 0 && (
+                <div className="ps-progress">
+                  <div className={`ps-progress-fill ps-fill-${toneOf(submitData.status)}`}
+                    style={{ width: `${(submitData.passedCount / submitData.totalCount) * 100}%` }} />
+                </div>
+              )}
+
+              {submitData.status === "wrong_answer" && submitData.failedTestCase && (
+                <div className="ps-case">
+                  <div className="ps-case-title">
+                    Failed on test case {submitData.failedTestCaseIndex != null ? `#${submitData.failedTestCaseIndex + 1}` : ""}
+                  </div>
+                  <div className="ps-case-row"><span>Input</span><pre>{submitData.failedTestCase.input}</pre></div>
+                  <div className="ps-case-row"><span>Expected</span><pre>{submitData.failedTestCase.output}</pre></div>
+                  <div className="ps-case-row"><span>Output</span><pre className="ps-tone-bad">{submitData.output}</pre></div>
+                </div>
+              )}
+
+              {["compilation_error", "runtime_error", "error"].includes(submitData.status) && submitData.error && (
+                <pre className={`ps-error ps-error-${toneOf(submitData.status)}`}>{submitData.error}</pre>
+              )}
+            </div>
+          )}
+        </>}
+      </div>
+    </div>
+  );
+
+  /* ── editor pane ── */
+  const editorPane = (
+    <div className="ps-pane">
+      <div className="ps-pane-bar">
+        <div className="ps-pane-bar-left">
+          <select className="ps-select" value={language} onChange={e => setLanguage(e.target.value)} aria-label="Language">
+            {languageOptions.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+          </select>
+          <select className="ps-select" value={editorTheme} onChange={e => setEditorTheme(e.target.value)} aria-label="Editor theme">
+            {themeOptions.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+          </select>
+        </div>
+        <div className="ps-pane-bar-left">
+          <span className="ps-pane-hint">Autosaved</span>
+          <button className="btn btn-ghost btn-sm btn-icon" title="Reset to starter code" aria-label="Reset to starter code"
+            onClick={() => setCode(problem?.codeTemplates?.[language]?.starter)}>
+            <RotateCcw size={14} />
+          </button>
+        </div>
+      </div>
+      <div className="ps-editor">
+        <Editor height="100%" language={languageOptions.find(l => l.value === language)?.monaco || "javascript"}
+          theme={monacoTheme} value={code} onChange={value => setCode(value)}
+          beforeMount={defineCodeleetThemes}
+          onMount={(_, monaco) => { document.fonts?.ready.then(() => monaco.editor.remeasureFonts()); }}
+          options={{ minimap: { enabled: false }, fontSize: 14, fontFamily: "'Geist Mono', ui-monospace, Menlo, monospace", lineHeight: 22, lineNumbers: "on", scrollBeyondLastLine: false, automaticLayout: true, tabSize: 2, wordWrap: "on", padding: { top: 14, bottom: 14 }, renderLineHighlight: "line", scrollbar: { verticalScrollbarSize: 8, horizontalScrollbarSize: 8 } }} />
+      </div>
+    </div>
+  );
+
+  /* ── console pane ── */
+  const consolePane = (
+    <div className="ps-pane">
+      <div className="ps-pane-bar">
+        <span className="ps-pane-title"><Terminal size={14} /> Test Result</span>
+        {isRunning && <span className="ps-pane-hint ps-tone-info">Running…</span>}
+      </div>
+      <div className="ps-results-content">
+        {isRunning && (
+          <div className="ps-running">
+            <span className="spinner" />
+            Running your code in the sandbox…
+          </div>
+        )}
+
+        {!isRunning && testResults.length === 0 && (
+          <div className="ps-empty ps-empty-sm"><Play size={18} />Run your code to see test results</div>
+        )}
+
+        {testResults.map((r, idx) => {
+          if (r.type === "accepted") return (
+            <div key={idx} className="ps-result">
+              <div className="ps-result-head">
+                <span className="ps-result-title ps-tone-ok"><Check size={16} strokeWidth={2.5} />Accepted</span>
+                <span className="ps-result-time">{r.time}</span>
+              </div>
+              {r.totalCount != null && <>
+                <div className="ps-result-sub">{r.passedCount} / {r.totalCount} test cases passed</div>
+                <div className="ps-progress"><div className="ps-progress-fill ps-fill-ok" style={{ width: `${(r.passedCount / r.totalCount) * 100}%` }} /></div>
+              </>}
+            </div>
+          );
+          if (r.type === "wrong_answer") return (
+            <div key={idx} className="ps-result">
+              <div className="ps-result-head">
+                <span className="ps-result-title ps-tone-bad"><X size={16} strokeWidth={2.5} />Wrong Answer</span>
+                <span className="ps-result-time">{r.time}</span>
+              </div>
+              {r.totalCount != null && <>
+                <div className="ps-result-sub">{r.passedCount} / {r.totalCount} test cases passed</div>
+                <div className="ps-progress"><div className="ps-progress-fill ps-fill-bad" style={{ width: `${(r.passedCount / r.totalCount) * 100}%` }} /></div>
+              </>}
+              <div className="ps-case">
+                {r.failedIndex != null && <div className="ps-case-title">Failed on test case #{r.failedIndex}</div>}
+                <div className="ps-case-row"><span>Input</span><pre>{r.input}</pre></div>
+                <div className="ps-case-row"><span>Expected</span><pre>{r.expected}</pre></div>
+                <div className="ps-case-row"><span>Output</span><pre className="ps-tone-bad">{r.output}</pre></div>
+              </div>
+            </div>
+          );
+          return (
+            <div key={idx} className="ps-result">
+              <div className="ps-result-head">
+                <span className={`ps-result-title ps-tone-${toneOf(r.type)}`}><AlertTriangle size={15} />{labelOf(r.type)}</span>
+                <span className="ps-result-time">{r.time}</span>
+              </div>
+              <pre className={`ps-error ps-error-${toneOf(r.type)}`}>{r.error}</pre>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
 
   return (
     <div className="ps-page">
       {/* ── HEADER ── */}
-      <div className="ps-header">
+      <header className="ps-header">
         <div className="ps-header-left">
-          <button className="ps-back" onClick={() => window.history.back()}><ChevronLeft size={18} /></button>
-          <span className="ps-title">{problem.title}</span>
-          <span className={diffCls}>{problem.difficulty}</span>
-          <span className="ps-id">#{problem.id}</span>
+          <button className="btn btn-ghost btn-sm btn-icon" onClick={() => navigate("/problems")} aria-label="Back to problems">
+            <ChevronLeft size={18} />
+          </button>
+          <button onClick={() => navigate("/")} aria-label="CodeLeet home" className="ps-logo"><Logo small /></button>
+          <span className="ps-header-sep" />
+          <span className="ps-header-title">{problem.title}</span>
         </div>
+
+        <div className="ps-header-center">
+          <button className="btn btn-secondary btn-sm" onClick={handleRun} disabled={isRunning || isJudging}>
+            {isRunning ? <span className="spinner" /> : <Play size={14} />} Run
+          </button>
+          <button className="btn btn-primary btn-sm" onClick={handleSubmit} disabled={isRunning || isJudging}>
+            {isJudging ? <span className="spinner" /> : <Send size={14} />} Submit
+          </button>
+        </div>
+
         <div className="ps-header-right">
-          <div className="ps-timer">
-            <Clock size={14} style={{ color: isTimerRunning ? "#3b82f6" : "#475569" }} />
+          <div className={`ps-timer ${isTimerRunning ? "ps-timer-on" : ""}`}>
+            <Clock size={14} />
             <span>{formatTime(timer)}</span>
-            <button className={`ps-timer-btn ${isTimerRunning ? "ps-timer-btn-stop" : "ps-timer-btn-start"}`}
+            <button className="ps-timer-btn"
               onClick={() => { if (isTimerRunning) setIsTimerRunning(false); else { setTimer(0); setIsTimerRunning(true); } }}>
               {isTimerRunning ? "Stop" : "Start"}
             </button>
           </div>
-          <button className="ps-btn ps-btn-run" onClick={handleRun} disabled={runStatus === "Running"}>
-            <Play size={14} /> Run
-          </button>
-          <button className="ps-btn ps-btn-submit" onClick={handleSubmit} disabled={runStatus === "Running"}>
-            <Send size={14} /> Submit
-          </button>
+          <ThemeToggle className="btn-sm" />
           <LogoutButton onLogout={handleLogout} />
         </div>
-      </div>
+      </header>
 
-      {/* ── MAIN SPLIT ── */}
-      <div className="ps-main">
-        {/* ── LEFT PANEL ── */}
-        <div className="ps-left">
-          <div className="ps-tabs">
-            {["description", "submissions", "result"].map(tab => (
-              <button key={tab}
-                className={`ps-tab ${activeTab === tab ? "ps-tab-active" : ""}`}
-                onClick={() => { setActiveTab(tab); if (tab === "submissions") fetchMySubmissions(); }}>
-                {tab}
-              </button>
-            ))}
-          </div>
-          <div className="ps-content">
-            {/* DESCRIPTION TAB */}
-            {activeTab === "description" && <>
-              <h2 className="ps-section-title">Description</h2>
-              <p className="ps-desc">{problem.description}</p>
-
-              <h2 className="ps-section-title">Examples</h2>
-              {problem.examples.map((ex, i) => (
-                <div key={i} className="ps-example">
-                  <div className="ps-example-label">Input</div>
-                  <pre className="ps-example-val ps-example-val-input">{ex.input}</pre>
-                  <div className="ps-example-label" style={{ marginTop: 10 }}>Output</div>
-                  <pre className="ps-example-val ps-example-val-output">{ex.output}</pre>
-                  <div className="ps-example-label" style={{ marginTop: 10 }}>Explanation</div>
-                  <p className="ps-example-val ps-example-val-explain">{ex.explanation}</p>
-                </div>
-              ))}
-
-              <h2 className="ps-section-title">Constraints</h2>
-              <ul className="ps-constraints">
-                {problem.constraints.map((c, i) => <li key={i} className="ps-constraint">{c}</li>)}
-              </ul>
-            </>}
-
-            {/* SUBMISSIONS TAB */}
-            {activeTab === "submissions" && <>
-              {submissionsLoading && <div className="ps-empty">Loading submissions…</div>}
-              {!submissionsLoading && submissions.length === 0 && <div className="ps-empty">No submissions yet</div>}
-              {submissions.map(sub => (
-                <div key={sub._id}
-                  className={`ps-sub-item ${sub.status === "accepted" ? "ps-sub-item-accepted" : ""}`}
-                  onClick={() => { setSubmitData(sub); setActiveTab("result"); }}>
-                  <span style={{ fontSize: 13, fontWeight: 600, color: sub.status === "accepted" ? "#22c55e" : sub.status === "wrong_answer" ? "#ef4444" : "#f59e0b" }}>
-                    {sub.status.replace("_", " ").toUpperCase()}
-                  </span>
-                  <span style={{ fontSize: 11, color: "#475569" }}>{new Date(sub.createdAt).toLocaleString()}</span>
-                </div>
-              ))}
-            </>}
-
-            {/* RESULT TAB */}
-            {activeTab === "result" && <>
-              {!submitData ? (
-                <div className="ps-empty" style={{ padding: "48px 0" }}>No submission yet</div>
-              ) : (
-                <div className={`ps-verdict-box ${submitData.status === "accepted" ? "ps-card-accepted" :
-                  submitData.status === "wrong_answer" ? "ps-card-wrong" : ""
-                  }`} style={{
-                    borderColor: submitData.status === "accepted" ? "rgba(34,197,94,0.2)" :
-                      submitData.status === "wrong_answer" ? "rgba(239,68,68,0.2)" : "rgba(245,158,11,0.2)",
-                    background: submitData.status === "accepted" ? "rgba(34,197,94,0.04)" :
-                      submitData.status === "wrong_answer" ? "rgba(239,68,68,0.04)" : "rgba(245,158,11,0.04)"
-                  }}>
-                  <div className="ps-verdict-title" style={{
-                    color: submitData.status === "accepted" ? "#22c55e" :
-                      submitData.status === "wrong_answer" ? "#ef4444" : "#f59e0b"
-                  }}>
-                    {(submitData?.status || "processing").replace("_", " ").toUpperCase()}
-                  </div>
-                  <div className="ps-meta" style={{ justifyContent: "center", marginBottom: 14 }}>
-                    {submitData.time != null && <span>⏱ {submitData.time} ms</span>}
-                    {submitData.memory != null && <span>💾 {submitData.memory} KB</span>}
-                  </div>
-
-                  {submitData.status === "accepted" && submitData.passedCount != null && <>
-                    <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12, marginBottom: 4 }}>
-                      <span style={{ color: "#64748b" }}>Test Cases Passed</span>
-                      <span style={{ color: "#22c55e", fontWeight: 700 }}>{submitData.passedCount} / {submitData.totalCount}</span>
-                    </div>
-                    <div className="ps-progress"><div className="ps-progress-fill ps-progress-green" style={{ width: "100%" }} /></div>
-                    <p style={{ textAlign: "center", color: "#22c55e", fontSize: 13, marginTop: 8 }}>All test cases passed 🎉</p>
-                  </>}
-
-                  {submitData.status === "wrong_answer" && <>
-                    {submitData.passedCount != null && <>
-                      <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12, marginBottom: 4 }}>
-                        <span style={{ color: "#64748b" }}>Test Cases Passed</span>
-                        <span style={{ color: "#ef4444", fontWeight: 700 }}>{submitData.passedCount} / {submitData.totalCount}</span>
-                      </div>
-                      <div className="ps-progress"><div className="ps-progress-fill ps-progress-red" style={{ width: `${(submitData.passedCount / submitData.totalCount) * 100}%` }} /></div>
-                    </>}
-                    {submitData.failedTestCaseIndex != null && (
-                      <div style={{ display: "inline-block", padding: "3px 8px", borderRadius: 4, background: "rgba(239,68,68,0.1)", color: "#f87171", fontSize: 12, margin: "8px 0" }}>
-                        ❌ Failed on Test Case #{submitData.failedTestCaseIndex + 1}
-                      </div>
-                    )}
-                    {submitData.failedTestCase && <>
-                      <div className="ps-detail-row"><b>Input: </b><span>{submitData.failedTestCase.input}</span></div>
-                      <div className="ps-detail-row"><b>Expected: </b><span>{submitData.failedTestCase.output}</span></div>
-                      <div className="ps-detail-row"><b>Output: </b><span>{submitData.output}</span></div>
-                    </>}
-                  </>}
-
-                  {(submitData.status === "compilation_error" || submitData.status === "runtime_error") && (
-                    <div className="ps-error-block" style={{ borderColor: submitData.status === "compilation_error" ? "rgba(245,158,11,0.2)" : "rgba(239,68,68,0.2)" }}>
-                      <div className={`ps-error-header ${submitData.status === "compilation_error" ? "ps-error-header-compile" : "ps-error-header-runtime"}`}>
-                        <span className="ps-dot" style={{ background: submitData.status === "compilation_error" ? "#f59e0b" : "#ef4444" }} />
-                        {submitData.status === "compilation_error" ? "Compilation Error" : "Runtime Error"}
-                      </div>
-                      <pre className="ps-error-pre">{submitData.error}</pre>
-                    </div>
-                  )}
-                </div>
-              )}
-            </>}
-          </div>
-        </div>
-
-        {/* ── RIGHT PANEL ── */}
-        <div className="ps-right">
-          <div className="ps-editor-bar">
-            <div className="ps-editor-bar-left">
-              <select className="ps-select" value={language} onChange={e => setLanguage(e.target.value)}>
-                {languageOptions.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
-              </select>
-              <select className="ps-select" value={editorTheme} onChange={e => setEditorTheme(e.target.value)}>
-                {themeOptions.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
-              </select>
-              <button className="ps-reset" title="Reset to starter code"
-                onClick={() => setCode(problem?.codeTemplates?.[language]?.starter)}>
-                <RefreshCcw size={14} />
-              </button>
-            </div>
-            <span className="ps-editor-label">CodeLeet Editor</span>
-          </div>
-
-          <div className="ps-editor">
-            <Editor height="100%" language={languageOptions.find(l => l.value === language)?.monaco || "javascript"}
-              theme={editorTheme} value={code} onChange={value => setCode(value)}
-              options={{ minimap: { enabled: false }, fontSize: 14, lineNumbers: "on", scrollBeyondLastLine: false, automaticLayout: true, tabSize: 2, wordWrap: "on", padding: { top: 16, bottom: 16 } }} />
-          </div>
-
-          <div className="ps-results">
-            <div className="ps-results-bar">Test Results</div>
-            <div className="ps-results-content">
-              {runStatus === "Running" && (
-                <div className="ps-card ps-card-running" style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                  <div className="ps-spinner" />
-                  <span style={{ fontSize: 13, fontWeight: 600, color: "#60a5fa" }}>Running…</span>
-                </div>
-              )}
-
-              {testResults.length === 0 && (
-                <div className="ps-empty"><Zap size={28} style={{ opacity: 0.3 }} /><span>Run your code to see test results</span></div>
-              )}
-
-              {testResults.map((r, idx) => {
-                if (r.type === "accepted") return (
-                  <div key={idx} className="ps-card ps-card-accepted">
-                    <div className="ps-card-header"><Check size={14} style={{ color: "#22c55e" }} /><span style={{ color: "#22c55e" }}>Accepted</span></div>
-                    {r.totalCount != null && <>
-                      <div style={{ display: "flex", justifyContent: "space-between", fontSize: 11 }}>
-                        <span style={{ color: "#64748b" }}>Test Cases Passed</span>
-                        <span style={{ color: "#22c55e", fontWeight: 700 }}>{r.passedCount} / {r.totalCount}</span>
-                      </div>
-                      <div className="ps-progress"><div className="ps-progress-fill ps-progress-green" style={{ width: `${(r.passedCount / r.totalCount) * 100}%` }} /></div>
-                    </>}
-                    <p style={{ color: "#22c55e", fontSize: 12, margin: "4px 0" }}>All test cases passed 🎉</p>
-                    <div className="ps-meta">⏱ {r.time}</div>
-                  </div>
-                );
-                if (r.type === "wrong_answer") return (
-                  <div key={idx} className="ps-card ps-card-wrong">
-                    <div className="ps-card-header"><X size={14} style={{ color: "#ef4444" }} /><span style={{ color: "#ef4444" }}>Wrong Answer</span></div>
-                    {r.totalCount != null && <>
-                      <div style={{ display: "flex", justifyContent: "space-between", fontSize: 11 }}>
-                        <span style={{ color: "#64748b" }}>Test Cases Passed</span>
-                        <span style={{ color: "#ef4444", fontWeight: 700 }}>{r.passedCount} / {r.totalCount}</span>
-                      </div>
-                      <div className="ps-progress"><div className="ps-progress-fill ps-progress-red" style={{ width: `${(r.passedCount / r.totalCount) * 100}%` }} /></div>
-                    </>}
-                    {r.failedIndex != null && (
-                      <div style={{ display: "inline-block", padding: "2px 8px", borderRadius: 4, background: "rgba(239,68,68,0.1)", color: "#f87171", fontSize: 11, margin: "6px 0" }}>
-                        ❌ Failed on Test Case #{r.failedIndex}
-                      </div>
-                    )}
-                    <div className="ps-detail-row"><b>Input: </b><span>{r.input}</span></div>
-                    <div className="ps-detail-row"><b>Expected: </b><span>{r.expected}</span></div>
-                    <div className="ps-detail-row"><b>Output: </b><span>{r.output}</span></div>
-                    <div className="ps-meta" style={{ marginTop: 6 }}>⏱ {r.time}</div>
-                  </div>
-                );
-                if (r.type === "compilation_error") return (
-                  <div key={idx} className="ps-error-block" style={{ borderColor: "rgba(245,158,11,0.2)" }}>
-                    <div className="ps-error-header ps-error-header-compile">
-                      <span className="ps-dot" style={{ background: "#f59e0b" }} />Compilation Error
-                      <span style={{ marginLeft: "auto", color: "#64748b", fontSize: 11 }}>⏱ {r.time}</span>
-                    </div>
-                    <pre className="ps-error-pre">{r.error}</pre>
-                  </div>
-                );
-                return (
-                  <div key={idx} className="ps-error-block" style={{ borderColor: "rgba(239,68,68,0.2)" }}>
-                    <div className="ps-error-header ps-error-header-runtime">
-                      <span className="ps-dot" style={{ background: "#ef4444" }} />Runtime Error
-                      <span style={{ marginLeft: "auto", color: "#64748b", fontSize: 11 }}>⏱ {r.time}</span>
-                    </div>
-                    <pre className="ps-error-pre">{r.error}</pre>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-        </div>
-      </div>
+      {/* ── RESIZABLE WORKSPACE ── */}
+      <PanelGroup direction={narrow ? "vertical" : "horizontal"} autoSaveId={narrow ? "codeleet-ps-v" : "codeleet-ps-h"} className="ps-main">
+        <Panel defaultSize={42} minSize={22} order={1}>
+          {leftPane}
+        </Panel>
+        <Handle direction={narrow ? "vertical" : "horizontal"} />
+        <Panel defaultSize={58} minSize={30} order={2}>
+          <PanelGroup direction="vertical" autoSaveId="codeleet-ps-editor">
+            <Panel defaultSize={68} minSize={20}>
+              {editorPane}
+            </Panel>
+            <Handle direction="vertical" />
+            <Panel defaultSize={32} minSize={12}>
+              {consolePane}
+            </Panel>
+          </PanelGroup>
+        </Panel>
+      </PanelGroup>
     </div>
   );
 };

@@ -1,11 +1,10 @@
 import React, { useState } from "react";
-import { motion } from "framer-motion";
-import { Eye, EyeOff, Chrome, Loader2 } from "lucide-react";
+import { Eye, EyeOff, Loader2 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import axios from "../api/axios";
 import { API_BASE_URL } from "../api/urls";
 import { useForm } from "react-hook-form";
-import Navbar from "../components/Navbar";
+import AuthLayout, { GoogleMark, OrDivider } from "../components/AuthLayout";
 import toast from "react-hot-toast";
 
 const RegisterPage = () => {
@@ -47,44 +46,49 @@ const RegisterPage = () => {
   };
 
   return (
-    <div className="min-h-screen w-full bg-[#0A0A0A] text-white">
-      <Navbar/>
-      <div className="min-h-screen w-full flex items-center justify-center bg-[#0A0A0A] px-4">
-        <motion.div
-          initial={{ opacity: 0, y: 40 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.5 }}
-          className="w-full max-w-md bg-[#111111] p-8 rounded-2xl shadow-xl border border-white/10"
+    <AuthLayout
+      title="Create your account"
+      subtitle="Start solving in under a minute."
+      footer={<>
+        Already have an account?{" "}
+        <span
+          className="cursor-pointer font-medium text-accent hover:underline"
+          onClick={() => navigate("/login")}
         >
-          <h2 className="text-3xl font-semibold text-white text-center mb-8">
-            Create Account
-          </h2>
+          Login
+        </span>
+      </>}
+    >
+          {/* Google Signup */}
+          <button
+            onClick={handleGoogleAuth}
+            className="btn btn-secondary w-full"
+          >
+            <GoogleMark />
+            Continue with Google
+          </button>
+
+          <OrDivider />
 
           {/* FORM START */}
-          <form onSubmit={handleSubmit(onRegister)}>
+          <form onSubmit={handleSubmit(onRegister)} className="space-y-4">
             {/* Full Name */}
-            <div className="mb-5">
-              <label className="text-gray-300 text-sm mb-2 block">
-                Full Name
-              </label>
+            <div>
+              <label className="label mb-1.5">Full Name</label>
               <input
                 type="text"
                 placeholder="Enter your full name"
                 {...register("fullName", { required: "Name is required" })}
-                className="w-full p-3 bg-[#1A1A1A] rounded-xl text-white outline-none"
+                className="field"
               />
-              {errors.name && (
-                <p className="text-red-400 text-sm mt-1">
-                  {errors.name.message}
-                </p>
+              {errors.fullName && (
+                <p className="mt-1.5 text-xs text-bad">{errors.fullName.message}</p>
               )}
             </div>
 
             {/* Email */}
-            <div className="mb-5">
-              <label className="text-gray-300 text-sm mb-2 block">
-                Email
-              </label>
+            <div>
+              <label className="label mb-1.5">Email</label>
               <input
                 type="email"
                 placeholder="Enter your email"
@@ -95,20 +99,16 @@ const RegisterPage = () => {
                     message: "Invalid email"
                   }
                 })}
-                className="w-full p-3 bg-[#1A1A1A] rounded-xl text-white outline-none"
+                className="field"
               />
               {errors.email && (
-                <p className="text-red-400 text-sm mt-1">
-                  {errors.email.message}
-                </p>
+                <p className="mt-1.5 text-xs text-bad">{errors.email.message}</p>
               )}
             </div>
 
             {/* Password */}
-            <div className="mb-5">
-              <label className="text-gray-300 text-sm mb-2 block">
-                Password
-              </label>
+            <div>
+              <label className="label mb-1.5">Password</label>
               <div className="relative">
                 <input
                   type={showPassword ? "text" : "password"}
@@ -120,28 +120,25 @@ const RegisterPage = () => {
                       message: "Minimum 6 characters"
                     }
                   })}
-                  className="w-full p-3 bg-[#1A1A1A] rounded-xl text-white outline-none"
+                  className="field pr-10"
                 />
                 <button
                   type="button"
                   onClick={() => setShowPassword(!showPassword)}
-                  className="absolute right-3 top-3 text-gray-400"
+                  className="absolute inset-y-0 right-0 flex w-10 items-center justify-center text-faint hover:text-fg"
+                  aria-label={showPassword ? "Hide password" : "Show password"}
                 >
-                  {showPassword ? <EyeOff size={20} /> : <Eye size={20} />}
+                  {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
                 </button>
               </div>
               {errors.password && (
-                <p className="text-red-400 text-sm mt-1">
-                  {errors.password.message}
-                </p>
+                <p className="mt-1.5 text-xs text-bad">{errors.password.message}</p>
               )}
             </div>
 
             {/* Confirm Password */}
-            <div className="mb-6">
-              <label className="text-gray-300 text-sm mb-2 block">
-                Confirm Password
-              </label>
+            <div>
+              <label className="label mb-1.5">Confirm Password</label>
               <div className="relative">
                 <input
                   type={showConfirm ? "text" : "password"}
@@ -149,64 +146,37 @@ const RegisterPage = () => {
                   {...register("confirmPassword", {
                     required: "Confirm your password"
                   })}
-                  className="w-full p-3 bg-[#1A1A1A] rounded-xl text-white outline-none"
+                  className="field pr-10"
                 />
                 <button
                   type="button"
                   onClick={() => setShowConfirm(!showConfirm)}
-                  className="absolute right-3 top-3 text-gray-400"
+                  className="absolute inset-y-0 right-0 flex w-10 items-center justify-center text-faint hover:text-fg"
+                  aria-label={showConfirm ? "Hide password" : "Show password"}
                 >
-                  {showConfirm ? <EyeOff size={20} /> : <Eye size={20} />}
+                  {showConfirm ? <EyeOff size={16} /> : <Eye size={16} />}
                 </button>
               </div>
+              {errors.confirmPassword && (
+                <p className="mt-1.5 text-xs text-bad">{errors.confirmPassword.message}</p>
+              )}
             </div>
 
             {/* Submit */}
-            <motion.button
-              whileTap={!isLoading ? { scale: 0.95 } : {}}
+            <button
               type="submit"
               disabled={isLoading}
-              className="w-full bg-purple-600 hover:bg-purple-700 disabled:opacity-70 disabled:cursor-not-allowed text-white p-3 rounded-xl font-medium mb-4 flex items-center justify-center gap-2"
+              className="btn btn-primary w-full"
             >
               {isLoading ? (
                 <>
-                  <Loader2 size={18} className="animate-spin" />
+                  <Loader2 size={16} className="animate-spin" />
                   Creating account…
                 </>
               ) : "Create Account"}
-            </motion.button>
+            </button>
           </form>
-
-          {/* Divider */}
-          <div className="flex items-center gap-3 mb-4">
-            <div className="h-px bg-white/10 flex-grow" />
-            <span className="text-gray-400 text-sm">OR</span>
-            <div className="h-px bg-white/10 flex-grow" />
-          </div>
-
-          {/* Google Signup */}
-          <motion.button
-            whileTap={{ scale: 0.95 }}
-            onClick={handleGoogleAuth}
-            className="w-full flex items-center justify-center gap-3 bg-[#1A1A1A] hover:bg-[#242424] transition p-3 rounded-xl border border-white/10 text-white"
-          >
-            <Chrome size={20} />
-            Continue with Google
-          </motion.button>
-
-
-          <p className="text-center text-gray-500 text-sm mt-6">
-            Already have an account?{" "}
-            <span
-              className="text-purple-400 cursor-pointer hover:underline"
-              onClick={() => navigate("/login")}
-            >
-              Login
-            </span>
-          </p>
-        </motion.div>
-      </div>
-    </div>
+    </AuthLayout>
   );
 };
 

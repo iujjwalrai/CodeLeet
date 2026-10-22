@@ -1,68 +1,39 @@
 import React, { useState, useEffect } from "react";
 import {
-  Search, ChevronLeft, ChevronRight, TrendingUp, Award,
-  CheckCircle2, XCircle, Clock, BarChart2, Zap, Target,
-  LayoutGrid, List, ArrowUpDown, Code2
+  Search, ChevronLeft, ChevronRight, LayoutGrid, List, CheckCircle2, CircleDashed, Circle, ChevronRight as Arrow,
 } from "lucide-react";
 import axios from "../api/axios";
 import { useNavigate } from "react-router-dom";
+import Navbar from "../components/Navbar";
+import { useAuth } from "../context/AuthContext";
 
 /* ─── tiny helpers ─────────────────────────────────────────── */
-const DIFF_META = {
-  Easy:   { color: "#22c55e", bg: "rgba(34,197,94,0.08)",   border: "rgba(34,197,94,0.25)"   },
-  Medium: { color: "#f59e0b", bg: "rgba(245,158,11,0.08)",  border: "rgba(245,158,11,0.25)"  },
-  Hard:   { color: "#ef4444", bg: "rgba(239,68,68,0.08)",   border: "rgba(239,68,68,0.25)"   },
-};
+const DIFF_BADGE = { Easy: "badge-easy", Medium: "badge-medium", Hard: "badge-hard" };
 
 const STATUS_META = {
-  Solved:    { color: "#22c55e", icon: <CheckCircle2 size={11} />, label: "Solved"    },
-  Attempted: { color: "#f59e0b", icon: <Clock        size={11} />, label: "Attempted" },
-  Unsolved:  { color: "#6b7280", icon: <XCircle      size={11} />, label: "Unsolved"  },
+  Solved:    { icon: CheckCircle2, cls: "text-ok",    label: "Solved"    },
+  Attempted: { icon: CircleDashed, cls: "text-warn",  label: "Attempted" },
+  Unsolved:  { icon: Circle,       cls: "text-line-2", label: "Unsolved"  },
 };
 
-/* ─── ring progress ────────────────────────────────────────── */
-const Ring = ({ value, max, color, size = 56 }) => {
-  const r = 22, c = 2 * Math.PI * r;
-  const pct = max > 0 ? value / max : 0;
-  return (
-    <svg width={size} height={size} viewBox="0 0 56 56" style={{ transform: "rotate(-90deg)" }}>
-      <circle cx="28" cy="28" r={r} fill="none" stroke="rgba(255,255,255,0.06)" strokeWidth="4" />
-      <circle cx="28" cy="28" r={r} fill="none" stroke={color} strokeWidth="4"
-        strokeDasharray={c} strokeDashoffset={c * (1 - pct)}
-        strokeLinecap="round" style={{ transition: "stroke-dashoffset 0.8s ease" }} />
-    </svg>
-  );
-};
+const acceptanceOf = (p) => p.stats?.acceptance ?? p.acceptance;
+const topicsOf = (p) => p.topics || (p.topic ? [p.topic] : []);
+
+const ROW_COLS = "grid-cols-[28px_1fr_auto] md:grid-cols-[28px_1fr_180px_96px_120px_24px]";
 
 /* ─── stat card ────────────────────────────────────────────── */
-const StatCard = ({ icon, label, value, sub, color, ring, ringMax }) => (
-  <div style={{
-    background: "rgba(255,255,255,0.03)",
-    border: "1px solid rgba(255,255,255,0.07)",
-    borderRadius: 16,
-    padding: "18px 20px",
-    display: "flex", alignItems: "center", gap: 14,
-    transition: "border-color 0.2s, transform 0.2s",
-  }}
-    onMouseEnter={e => { e.currentTarget.style.borderColor = color + "55"; e.currentTarget.style.transform = "translateY(-2px)"; }}
-    onMouseLeave={e => { e.currentTarget.style.borderColor = "rgba(255,255,255,0.07)"; e.currentTarget.style.transform = "translateY(0)"; }}
-  >
-    {ring !== undefined
-      ? <div style={{ position: "relative", flexShrink: 0 }}>
-          <Ring value={ring} max={ringMax} color={color} />
-          <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", transform: "rotate(90deg)" }}>
-            <span style={{ fontSize: 11, fontWeight: 700, color }}>{ringMax > 0 ? Math.round((ring / ringMax) * 100) : 0}%</span>
-          </div>
-        </div>
-      : <div style={{ width: 42, height: 42, borderRadius: 12, background: color + "18", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
-          {React.cloneElement(icon, { size: 18, color })}
-        </div>
-    }
-    <div>
-      <div style={{ fontSize: 22, fontWeight: 800, color: "#f1f5f9", lineHeight: 1 }}>{value}</div>
-      <div style={{ fontSize: 12, color: "#64748b", marginTop: 3, fontWeight: 500 }}>{label}</div>
-      {sub && <div style={{ fontSize: 11, color: color, marginTop: 2, fontWeight: 600 }}>{sub}</div>}
+const StatCard = ({ label, value, hint, progress }) => (
+  <div className="card p-4">
+    <div className="text-xs font-medium text-dim">{label}</div>
+    <div className="mt-1.5 flex items-baseline gap-2">
+      <span className="text-2xl font-semibold tracking-tight">{value}</span>
+      {hint && <span className="text-xs text-faint">{hint}</span>}
     </div>
+    {progress !== undefined && (
+      <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-hover">
+        <div className="h-full rounded-full bg-accent transition-[width] duration-700" style={{ width: `${progress}%` }} />
+      </div>
+    )}
   </div>
 );
 
@@ -80,18 +51,43 @@ const ProblemsPage = () => {
   const [loading, setLoading]     = useState(false);
   const [error, setError]         = useState(null);
   const [meta, setMeta]           = useState({ total: 0, page: 1, pages: 1 });
+  const [statusMap, setStatusMap] = useState({});
 
   const navigate = useNavigate();
+  const { user } = useAuth();
   const problemsPerPage = 8;
   const totalPages = meta.pages || 1;
 
+  /* Per-user status, derived from the user's own submissions */
+  useEffect(() => {
+    if (!user) { setStatusMap({}); return; }
+    const fetchStatuses = async () => {
+      try {
+        const res = await axios.get("/api/submissions/me", { params: { limit: 500 } });
+        const map = {};
+        (res.data || []).forEach(sub => {
+          const id = sub.problem?._id || sub.problem;
+          if (!id) return;
+          if (sub.status === "accepted") map[id] = "Solved";
+          else if (!map[id]) map[id] = "Attempted";
+        });
+        setStatusMap(map);
+      } catch (err) {
+        console.error("Failed to load submission status", err);
+      }
+    };
+    fetchStatuses();
+  }, [user]);
+
+  const statusOf = (p) => statusMap[p._id] || p.status || "Unsolved";
+  const visible = status ? problems.filter(p => statusOf(p) === status) : problems;
+
+  const solved = Object.values(statusMap).filter(s => s === "Solved").length;
+  const attempted = Object.values(statusMap).filter(s => s === "Attempted").length;
   const stats = {
     total:    meta.total || problems.length,
-    solved:   problems.filter(p => p.status === "Solved").length,
-    attempted:problems.filter(p => p.status === "Attempted").length,
-    easy:     problems.filter(p => p.difficulty === "Easy").length,
-    medium:   problems.filter(p => p.difficulty === "Medium").length,
-    hard:     problems.filter(p => p.difficulty === "Hard").length,
+    solved,
+    attempted,
   };
 
   useEffect(() => {
@@ -111,160 +107,125 @@ const ProblemsPage = () => {
     fetchProblems();
   }, [page, difficulty, topic, search, sortBy]);
 
-  /* shared select style */
-  const sel = {
-    background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.08)",
-    borderRadius: 10, color: "#cbd5e1", fontSize: 13, padding: "9px 14px",
-    outline: "none", cursor: "pointer", appearance: "none", WebkitAppearance: "none",
-    backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%2364748b' stroke-width='2'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E")`,
-    backgroundRepeat: "no-repeat", backgroundPosition: "right 12px center",
-    paddingRight: 32, minWidth: 140,
-  };
+  const open = (p) => navigate(`/problem/${p.slug || p._id}`);
+
+  const empty = (
+    <div className="px-5 py-16 text-center">
+      <Search size={20} className="mx-auto text-faint" />
+      <p className="mt-3 text-sm font-medium">No problems found</p>
+      <p className="mt-1 text-sm text-dim">Try a different search or filter.</p>
+    </div>
+  );
 
   return (
-    <div style={{ minHeight: "100vh", background: "#0a0a0f", color: "#e2e8f0", fontFamily: "'Inter', system-ui, sans-serif" }}>
-      {/* ambient glow */}
-      <div style={{ position: "fixed", inset: 0, pointerEvents: "none", overflow: "hidden", zIndex: 0 }}>
-        <div style={{ position: "absolute", top: -100, left: "20%", width: 500, height: 500, borderRadius: "50%", background: "radial-gradient(circle, rgba(139,92,246,0.07) 0%, transparent 70%)" }} />
-        <div style={{ position: "absolute", bottom: -100, right: "10%", width: 400, height: 400, borderRadius: "50%", background: "radial-gradient(circle, rgba(59,130,246,0.06) 0%, transparent 70%)" }} />
-      </div>
+    <div className="min-h-screen bg-subtle text-fg">
+      <Navbar />
 
-      <div style={{ position: "relative", zIndex: 1, maxWidth: 1200, margin: "0 auto", padding: "40px 24px" }}>
+      <div className="mx-auto max-w-6xl px-4 py-10 sm:px-6">
 
         {/* ── header ── */}
-        <div style={{ marginBottom: 36 }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 8 }}>
-            <Code2 size={28} color="#8b5cf6" />
-            <h1 style={{ fontSize: 32, fontWeight: 800, background: "linear-gradient(135deg, #a78bfa 0%, #60a5fa 100%)", WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent", margin: 0 }}>
-              Problems
-            </h1>
-          </div>
-          <p style={{ color: "#475569", fontSize: 14, margin: 0 }}>
-            {meta.total} challenges • sharpen your problem-solving
+        <div className="mb-8">
+          <h1 className="text-3xl font-semibold tracking-tight">Problems</h1>
+          <p className="mt-1.5 text-sm text-dim">
+            {meta.total} {meta.total === 1 ? "problem" : "problems"} · C++ and Java
           </p>
         </div>
 
         {/* ── stats row ── */}
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 12, marginBottom: 28 }}>
-          <StatCard icon={<Target />} label="Total Problems" value={stats.total} color="#8b5cf6" />
-          <StatCard icon={<CheckCircle2 />} label="Solved" value={stats.solved}
-            sub={stats.total > 0 ? `${Math.round((stats.solved / stats.total) * 100)}% complete` : null}
-            color="#22c55e" ring={stats.solved} ringMax={stats.total} />
-          <StatCard icon={<Clock />} label="Attempted" value={stats.attempted} color="#f59e0b" />
-          <StatCard icon={<Award />} label="Streak" value="—" color="#60a5fa" />
+        <div className="mb-8 grid grid-cols-2 gap-3 md:grid-cols-4">
+          <StatCard label="Total problems" value={stats.total} />
+          <StatCard label="Solved" value={user ? stats.solved : "—"}
+            hint={user && stats.total > 0 ? `${Math.round((stats.solved / stats.total) * 100)}%` : null}
+            progress={user && stats.total > 0 ? (stats.solved / stats.total) * 100 : 0} />
+          <StatCard label="Attempted" value={user ? stats.attempted : "—"} />
+          <StatCard label="Daily streak" value={user?.stats ? `${user.stats.dailyStreak ?? 0}d` : "—"} />
         </div>
 
-        {/* ── filters bar ── */}
-        <div style={{ background: "rgba(255,255,255,0.025)", border: "1px solid rgba(255,255,255,0.07)", borderRadius: 16, padding: "18px 20px", marginBottom: 20 }}>
-          <div style={{ display: "flex", flexWrap: "wrap", gap: 10, alignItems: "center" }}>
-            {/* search */}
-            <div style={{ flex: "1 1 220px", display: "flex", alignItems: "center", gap: 10,
-              background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.08)",
-              borderRadius: 10, padding: "9px 14px" }}>
-              <Search size={15} color="#64748b" />
-              <input type="text" placeholder="Search problems…" value={search}
-                onChange={e => { setSearch(e.target.value); setPage(1); }}
-                style={{ background: "transparent", border: "none", outline: "none", color: "#e2e8f0", fontSize: 13, width: "100%" }} />
-            </div>
+        {/* ── toolbar ── */}
+        <div className="mb-4 flex flex-wrap items-center gap-2">
+          {/* search */}
+          <div className="relative min-w-[220px] flex-1">
+            <Search size={15} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-faint" />
+            <input type="text" placeholder="Search problems…" value={search}
+              onChange={e => { setSearch(e.target.value); setPage(1); }}
+              className="field h-9 pl-9" />
+          </div>
 
-            <select value={difficulty} onChange={e => { setDifficulty(e.target.value); setPage(1); }} style={sel}>
-              <option value="">All Difficulties</option>
-              <option value="Easy">Easy</option>
-              <option value="Medium">Medium</option>
-              <option value="Hard">Hard</option>
-            </select>
+          <select value={difficulty} onChange={e => { setDifficulty(e.target.value); setPage(1); }} className="field h-9 w-auto" aria-label="Difficulty">
+            <option value="">All difficulties</option>
+            <option value="Easy">Easy</option>
+            <option value="Medium">Medium</option>
+            <option value="Hard">Hard</option>
+          </select>
 
-            <select value={topic} onChange={e => { setTopic(e.target.value); setPage(1); }} style={sel}>
-              <option value="">All Topics</option>
-              <option value="Arrays">Arrays</option>
-              <option value="Binary Search">Binary Search</option>
-              <option value="DP">Dynamic Programming</option>
-              <option value="Graphs">Graphs</option>
-              <option value="Stack">Stack</option>
-              <option value="BFS">BFS</option>
-            </select>
+          <select value={topic} onChange={e => { setTopic(e.target.value); setPage(1); }} className="field h-9 w-auto" aria-label="Topic">
+            <option value="">All topics</option>
+            <option value="Arrays">Arrays</option>
+            <option value="Binary Search">Binary Search</option>
+            <option value="DP">Dynamic Programming</option>
+            <option value="Graphs">Graphs</option>
+            <option value="Stack">Stack</option>
+            <option value="BFS">BFS</option>
+          </select>
 
-            <select value={status} onChange={e => { setStatus(e.target.value); setPage(1); }} style={sel}>
-              <option value="">All Status</option>
+          {user && (
+            <select value={status} onChange={e => { setStatus(e.target.value); setPage(1); }} className="field h-9 w-auto" aria-label="Status">
+              <option value="">All statuses</option>
               <option value="Solved">Solved</option>
               <option value="Attempted">Attempted</option>
               <option value="Unsolved">Unsolved</option>
             </select>
+          )}
 
-            {/* sort pills */}
-            <div style={{ display: "flex", gap: 6, marginLeft: "auto" }}>
-              {["title", "difficulty", "acceptance"].map(s => (
-                <button key={s} onClick={() => setSortBy(s)} style={{
-                  padding: "7px 14px", borderRadius: 8, fontSize: 12, fontWeight: 600,
-                  border: "1px solid", cursor: "pointer", transition: "all 0.15s",
-                  background: sortBy === s ? "rgba(139,92,246,0.2)" : "transparent",
-                  borderColor: sortBy === s ? "#8b5cf6" : "rgba(255,255,255,0.08)",
-                  color: sortBy === s ? "#a78bfa" : "#64748b",
-                  display: "flex", alignItems: "center", gap: 5,
-                }}>
-                  <ArrowUpDown size={11} />
-                  {s.charAt(0).toUpperCase() + s.slice(1)}
-                </button>
-              ))}
-            </div>
+          <select value={sortBy} onChange={e => setSortBy(e.target.value)} className="field h-9 w-auto" aria-label="Sort by">
+            <option value="title">Sort: Title</option>
+            <option value="difficulty">Sort: Difficulty</option>
+            <option value="acceptance">Sort: Acceptance</option>
+          </select>
 
-            {/* view toggle */}
-            <div style={{ display: "flex", background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.08)", borderRadius: 10, overflow: "hidden" }}>
-              {[["table", <List size={15} />], ["grid", <LayoutGrid size={15} />]].map(([v, icon]) => (
-                <button key={v} onClick={() => setView(v)} style={{
-                  padding: "8px 12px", border: "none", cursor: "pointer", transition: "all 0.15s",
-                  background: view === v ? "rgba(139,92,246,0.25)" : "transparent",
-                  color: view === v ? "#a78bfa" : "#64748b",
-                }}>
-                  {icon}
-                </button>
-              ))}
-            </div>
+          {/* view toggle */}
+          <div className="flex h-9 rounded-lg border border-line bg-surface p-0.5 shadow-card">
+            {[["table", <List size={15} />], ["grid", <LayoutGrid size={15} />]].map(([v, icon]) => (
+              <button key={v} onClick={() => setView(v)} aria-label={`${v} view`}
+                className={`flex w-8 items-center justify-center rounded-md transition-colors ${view === v ? "bg-hover text-fg" : "text-faint hover:text-fg"}`}>
+                {icon}
+              </button>
+            ))}
           </div>
         </div>
 
         {/* ── loading / error ── */}
         {loading && (
-          <div style={{ textAlign: "center", padding: "60px 0" }}>
-            <div style={{ display: "inline-block", width: 36, height: 36, border: "3px solid rgba(139,92,246,0.2)", borderTopColor: "#8b5cf6", borderRadius: "50%", animation: "spin 0.7s linear infinite" }} />
-            <style>{`@keyframes spin{to{transform:rotate(360deg)}}`}</style>
+          <div className="card flex items-center justify-center gap-3 px-5 py-16 text-sm text-dim">
+            <span className="spinner text-accent" /> Loading problems…
           </div>
         )}
         {error && !loading && (
-          <div style={{ background: "rgba(239,68,68,0.08)", border: "1px solid rgba(239,68,68,0.2)", borderRadius: 12, padding: "16px 20px", color: "#f87171", fontSize: 14, marginBottom: 20 }}>
+          <div className="mb-5 rounded-xl border border-bad/30 bg-bad/5 px-5 py-4 text-sm text-bad">
             {error}
           </div>
         )}
 
         {/* ── TABLE VIEW ── */}
         {!loading && !error && view === "table" && (
-          <div style={{ background: "rgba(255,255,255,0.025)", border: "1px solid rgba(255,255,255,0.07)", borderRadius: 16, overflow: "hidden" }}>
+          <div className="card overflow-hidden">
             {/* thead */}
-            <div style={{ display: "grid", gridTemplateColumns: "60px 1fr 110px 130px 100px 110px 110px", padding: "12px 20px",
-              background: "rgba(255,255,255,0.03)", borderBottom: "1px solid rgba(255,255,255,0.06)" }}>
-              {["#", "Problem", "Difficulty", "Topic", "Acceptance", "Status", ""].map((h, i) => (
-                <span key={i} style={{ fontSize: 11, fontWeight: 700, color: "#475569", textTransform: "uppercase", letterSpacing: "0.06em" }}>{h}</span>
-              ))}
+            <div className={`grid ${ROW_COLS} items-center gap-4 border-b border-line bg-subtle px-5 py-2.5 text-xs font-medium text-faint`}>
+              <span />
+              <span>Title</span>
+              <span className="hidden md:block">Topics</span>
+              <span className="hidden md:block">Difficulty</span>
+              <span className="hidden md:block">Acceptance</span>
+              <span className="hidden md:block" />
             </div>
 
-            {/* rows */}
-            {problems.length === 0 && (
-              <div style={{ padding: "64px 0", textAlign: "center", color: "#334155" }}>
-                <Code2 size={40} style={{ margin: "0 auto 12px", display: "block", opacity: 0.4 }} />
-                <p style={{ margin: 0, fontSize: 14 }}>No problems match your filters.</p>
-              </div>
-            )}
+            {visible.length === 0 && empty}
 
-            {problems.map((p, idx) => {
-              const diff = DIFF_META[p.difficulty] || DIFF_META.Easy;
-              const st = STATUS_META[p.status] || STATUS_META.Unsolved;
-              return (
-                <ProblemRow key={p.id} p={p} diff={diff} st={st} idx={idx}
-                  onSolve={() => navigate(`/problem/${p.slug || p.id}`)} />
-              );
-            })}
+            {visible.map((p, idx) => (
+              <ProblemRow key={p._id || p.slug} p={p} n={(meta.page - 1) * problemsPerPage + idx + 1}
+                st={STATUS_META[statusOf(p)] || STATUS_META.Unsolved} onSolve={() => open(p)} />
+            ))}
 
-            {/* pagination */}
             {problems.length > 0 && (
               <Pagination page={page} totalPages={totalPages} meta={meta}
                 problemsPerPage={problemsPerPage} setPage={setPage} />
@@ -275,24 +236,16 @@ const ProblemsPage = () => {
         {/* ── GRID VIEW ── */}
         {!loading && !error && view === "grid" && (
           <>
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(300px, 1fr))", gap: 16 }}>
-              {problems.map(p => {
-                const diff = DIFF_META[p.difficulty] || DIFF_META.Easy;
-                const st = STATUS_META[p.status] || STATUS_META.Unsolved;
-                return (
-                  <GridCard key={p.id} p={p} diff={diff} st={st}
-                    onSolve={() => navigate(`/problem/${p.slug || p.id}`)} />
-                );
-              })}
-            </div>
-            {problems.length === 0 && (
-              <div style={{ padding: "64px 0", textAlign: "center", color: "#334155" }}>
-                <Code2 size={40} style={{ margin: "0 auto 12px", display: "block", opacity: 0.4 }} />
-                <p style={{ margin: 0, fontSize: 14 }}>No problems match your filters.</p>
+            {visible.length > 0 ? (
+              <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                {visible.map((p, idx) => (
+                  <GridCard key={p._id || p.slug} p={p} n={(meta.page - 1) * problemsPerPage + idx + 1}
+                    st={STATUS_META[statusOf(p)] || STATUS_META.Unsolved} onSolve={() => open(p)} />
+                ))}
               </div>
-            )}
+            ) : <div className="card">{empty}</div>}
             {problems.length > 0 && (
-              <div style={{ marginTop: 24 }}>
+              <div className="card mt-4 overflow-hidden">
                 <Pagination page={page} totalPages={totalPages} meta={meta}
                   problemsPerPage={problemsPerPage} setPage={setPage} />
               </div>
@@ -304,152 +257,105 @@ const ProblemsPage = () => {
   );
 };
 
-/* ─── table row ─────────────────────────────────────────────── */
-const ProblemRow = ({ p, diff, st, idx, onSolve }) => {
-  const [hov, setHov] = useState(false);
+/* ─── acceptance meter ─────────────────────────────────────── */
+const Acceptance = ({ p }) => {
+  const a = acceptanceOf(p);
+  if (a == null) return <span className="text-sm text-faint">—</span>;
   return (
-    <div onMouseEnter={() => setHov(true)} onMouseLeave={() => setHov(false)}
-      style={{
-        display: "grid", gridTemplateColumns: "60px 1fr 110px 130px 100px 110px 110px",
-        padding: "14px 20px", alignItems: "center",
-        borderBottom: "1px solid rgba(255,255,255,0.04)",
-        background: hov ? "rgba(139,92,246,0.04)" : "transparent",
-        transition: "background 0.15s",
-      }}>
-      <span style={{ fontSize: 12, color: "#334155", fontFamily: "monospace" }}>
-        {String(idx + 1).padStart(2, "0")}
+    <div className="flex items-center gap-2">
+      <span className="w-11 text-sm tabular-nums text-dim">{Number(a).toFixed(0)}%</span>
+      <span className="h-1 w-12 overflow-hidden rounded-full bg-hover">
+        <span className="block h-full rounded-full bg-faint" style={{ width: `${Math.min(Number(a) || 0, 100)}%` }} />
       </span>
-
-      <span style={{ fontWeight: 600, fontSize: 14, color: hov ? "#a78bfa" : "#cbd5e1", transition: "color 0.15s", cursor: "pointer" }}
-        onClick={onSolve}>
-        {p.title}
-      </span>
-
-      <span style={{ display: "inline-flex", alignItems: "center", padding: "3px 10px", borderRadius: 6,
-        background: diff.bg, border: `1px solid ${diff.border}`, color: diff.color,
-        fontSize: 11, fontWeight: 700, width: "fit-content" }}>
-        {p.difficulty}
-      </span>
-
-      <span style={{ fontSize: 12, color: "#60a5fa" }}>{p.topic}</span>
-
-      <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-        <BarChart2 size={12} color="#475569" />
-        <span style={{ fontSize: 13, color: "#94a3b8" }}>{p.acceptance}%</span>
-      </div>
-
-      <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
-        <div style={{ width: 7, height: 7, borderRadius: "50%", background: st.color, flexShrink: 0 }} />
-        <span style={{ fontSize: 12, color: st.color, fontWeight: 600 }}>{p.status || "Unsolved"}</span>
-      </div>
-
-      <button onClick={onSolve} style={{
-        display: "flex", alignItems: "center", gap: 6, padding: "7px 16px",
-        borderRadius: 8, fontSize: 12, fontWeight: 700, cursor: "pointer", border: "none",
-        background: hov ? "linear-gradient(135deg,#8b5cf6,#3b82f6)" : "rgba(139,92,246,0.15)",
-        color: hov ? "#fff" : "#a78bfa",
-        transition: "all 0.2s", letterSpacing: "0.02em",
-      }}>
-        <Zap size={12} /> Solve
-      </button>
     </div>
   );
 };
+
+const Topics = ({ p }) => (
+  <div className="flex min-w-0 flex-wrap gap-1">
+    {topicsOf(p).slice(0, 2).map(t => <span key={t} className="badge badge-neutral capitalize">{t}</span>)}
+    {topicsOf(p).length === 0 && <span className="text-sm text-faint">—</span>}
+  </div>
+);
+
+/* ─── table row ─────────────────────────────────────────────── */
+const ProblemRow = ({ p, n, st, onSolve }) => (
+  <button onClick={onSolve}
+    className={`group grid w-full ${ROW_COLS} items-center gap-4 border-b border-line px-5 py-3.5 text-left transition-colors last:border-b-0 hover:bg-hover`}>
+    <st.icon size={17} className={st.cls} aria-label={st.label} />
+
+    <span className="min-w-0">
+      <span className="block truncate text-sm font-medium text-fg">
+        <span className="mr-2 tabular-nums text-faint">{n}.</span>{p.title}
+      </span>
+      <span className="mt-1.5 flex gap-2 md:hidden">
+        <span className={`badge ${DIFF_BADGE[p.difficulty] || "badge-neutral"}`}>{p.difficulty}</span>
+      </span>
+    </span>
+
+    <span className="hidden md:block"><Topics p={p} /></span>
+    <span className="hidden md:block"><span className={`badge ${DIFF_BADGE[p.difficulty] || "badge-neutral"}`}>{p.difficulty}</span></span>
+    <span className="hidden md:block"><Acceptance p={p} /></span>
+
+    <Arrow size={16} className="text-faint transition-transform group-hover:translate-x-0.5 group-hover:text-fg" />
+  </button>
+);
 
 /* ─── grid card ─────────────────────────────────────────────── */
-const GridCard = ({ p, diff, st, onSolve }) => {
-  const [hov, setHov] = useState(false);
-  return (
-    <div onMouseEnter={() => setHov(true)} onMouseLeave={() => setHov(false)}
-      style={{
-        background: "rgba(255,255,255,0.025)", borderRadius: 16, padding: "20px",
-        border: `1px solid ${hov ? "rgba(139,92,246,0.35)" : "rgba(255,255,255,0.07)"}`,
-        transition: "all 0.2s", transform: hov ? "translateY(-3px)" : "none",
-        boxShadow: hov ? "0 12px 32px rgba(139,92,246,0.12)" : "none",
-        cursor: "default",
-      }}>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 14 }}>
-        <span style={{ fontSize: 11, color: "#334155", fontFamily: "monospace" }}>#{p.id}</span>
-        <span style={{ padding: "3px 10px", borderRadius: 6, background: diff.bg,
-          border: `1px solid ${diff.border}`, color: diff.color, fontSize: 11, fontWeight: 700 }}>
-          {p.difficulty}
-        </span>
-      </div>
-
-      <h3 style={{ fontSize: 15, fontWeight: 700, color: "#e2e8f0", margin: "0 0 12px", lineHeight: 1.4 }}>
-        {p.title}
-      </h3>
-
-      <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 18, fontSize: 12, color: "#64748b" }}>
-        <span style={{ color: "#60a5fa" }}>{p.topic}</span>
-        <span>·</span>
-        <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
-          <BarChart2 size={12} /> {p.acceptance}%
-        </div>
-      </div>
-
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
-          <div style={{ width: 7, height: 7, borderRadius: "50%", background: st.color }} />
-          <span style={{ fontSize: 11, fontWeight: 600, color: st.color }}>{p.status || "Unsolved"}</span>
-        </div>
-        <button onClick={onSolve} style={{
-          display: "flex", alignItems: "center", gap: 6, padding: "8px 18px",
-          borderRadius: 9, fontSize: 12, fontWeight: 700, cursor: "pointer", border: "none",
-          background: "linear-gradient(135deg,#8b5cf6,#3b82f6)", color: "#fff",
-          transition: "opacity 0.15s", opacity: hov ? 1 : 0.85,
-        }}>
-          <Zap size={12} /> Solve
-        </button>
-      </div>
+const GridCard = ({ p, n, st, onSolve }) => (
+  <button onClick={onSolve}
+    className="card group flex flex-col p-5 text-left transition-all hover:-translate-y-0.5 hover:border-line-2 hover:shadow-pop">
+    <div className="mb-4 flex items-center justify-between">
+      <span className={`badge ${DIFF_BADGE[p.difficulty] || "badge-neutral"}`}>{p.difficulty}</span>
+      <st.icon size={17} className={st.cls} aria-label={st.label} />
     </div>
-  );
-};
+    <h3 className="font-medium leading-snug text-fg">
+      <span className="mr-1.5 tabular-nums text-faint">{n}.</span>{p.title}
+    </h3>
+    <div className="mt-3"><Topics p={p} /></div>
+    <div className="mt-5 flex items-center justify-between border-t border-line pt-4">
+      <Acceptance p={p} />
+      <span className="flex items-center gap-1 text-sm font-medium text-accent">
+        Solve <Arrow size={15} className="transition-transform group-hover:translate-x-0.5" />
+      </span>
+    </div>
+  </button>
+);
 
 /* ─── pagination ────────────────────────────────────────────── */
 const Pagination = ({ page, totalPages, meta, problemsPerPage, setPage }) => (
-  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center",
-    padding: "16px 20px", borderTop: "1px solid rgba(255,255,255,0.06)",
-    background: "rgba(255,255,255,0.02)", flexWrap: "wrap", gap: 12 }}>
-    <span style={{ fontSize: 12, color: "#475569" }}>
-      Showing <b style={{ color: "#94a3b8" }}>{(meta.page - 1) * problemsPerPage + 1}</b>
-      {" "}–{" "}
-      <b style={{ color: "#94a3b8" }}>{Math.min(meta.page * problemsPerPage, meta.total)}</b>
-      {" "}of <b style={{ color: "#94a3b8" }}>{meta.total}</b> problems
+  <div className="flex flex-wrap items-center justify-between gap-3 border-t border-line px-5 py-3">
+    <span className="text-sm text-dim">
+      Showing <span className="font-medium text-fg">{(meta.page - 1) * problemsPerPage + 1}–{Math.min(meta.page * problemsPerPage, meta.total)}</span> of{" "}
+      <span className="font-medium text-fg">{meta.total}</span>
     </span>
 
-    <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-      <NavBtn disabled={page === 1} onClick={() => setPage(page - 1)}>
+    <div className="flex items-center gap-1">
+      <NavBtn disabled={page === 1} onClick={() => setPage(page - 1)} label="Previous page">
         <ChevronLeft size={16} />
       </NavBtn>
 
       {[...Array(Math.min(totalPages, 7))].map((_, i) => {
         const n = i + 1;
         return (
-          <button key={n} onClick={() => setPage(n)} style={{
-            width: 34, height: 34, borderRadius: 8, fontSize: 13, fontWeight: 600,
-            border: "1px solid", cursor: "pointer", transition: "all 0.15s",
-            background: page === n ? "linear-gradient(135deg,#8b5cf6,#3b82f6)" : "transparent",
-            borderColor: page === n ? "transparent" : "rgba(255,255,255,0.08)",
-            color: page === n ? "#fff" : "#64748b",
-          }}>{n}</button>
+          <button key={n} onClick={() => setPage(n)}
+            className={`h-8 min-w-8 rounded-md px-2 text-sm tabular-nums transition-colors ${
+              page === n ? "bg-fg font-medium text-bg" : "text-dim hover:bg-hover hover:text-fg"}`}>
+            {n}
+          </button>
         );
       })}
 
-      <NavBtn disabled={page === totalPages} onClick={() => setPage(page + 1)}>
+      <NavBtn disabled={page === totalPages} onClick={() => setPage(page + 1)} label="Next page">
         <ChevronRight size={16} />
       </NavBtn>
     </div>
   </div>
 );
 
-const NavBtn = ({ disabled, onClick, children }) => (
-  <button disabled={disabled} onClick={onClick} style={{
-    width: 34, height: 34, borderRadius: 8, display: "flex", alignItems: "center",
-    justifyContent: "center", border: "1px solid rgba(255,255,255,0.08)",
-    background: "transparent", color: disabled ? "#1e293b" : "#64748b",
-    cursor: disabled ? "not-allowed" : "pointer", transition: "all 0.15s",
-  }}>
+const NavBtn = ({ disabled, onClick, children, label }) => (
+  <button disabled={disabled} onClick={onClick} aria-label={label}
+    className="flex h-8 w-8 items-center justify-center rounded-md text-dim transition-colors hover:bg-hover hover:text-fg disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-transparent">
     {children}
   </button>
 );
