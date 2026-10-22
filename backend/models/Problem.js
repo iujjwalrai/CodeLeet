@@ -9,6 +9,9 @@ const exampleSchema = new mongoose.Schema(
   { _id: false }
 );
 
+// testCases and every driver are select: false so problem API responses
+// never include hidden tests or platform code. Code that judges submissions
+// opts back in with Problem.JUDGING_FIELDS.
 const testCaseSchema = new mongoose.Schema(
   {
     input: { type: String, required: true },
@@ -21,7 +24,7 @@ const testCaseSchema = new mongoose.Schema(
 const languageTemplateSchema = new mongoose.Schema(
   {
     starter: { type: String, required: true }, // user edits
-    driver: { type: String, required: true },  // platform runs
+    driver: { type: String, required: true, select: false },  // platform runs
   },
   { _id: false }
 );
@@ -39,7 +42,7 @@ const problemSchema = new mongoose.Schema(
     description: { type: String, required: true },
     constraints: [{ type: String }],
     examples: [exampleSchema],
-    testCases: [testCaseSchema],
+    testCases: { type: [testCaseSchema], select: false },
 
     // 👇 MAIN CHANGE HERE
     codeTemplates: {
@@ -66,4 +69,11 @@ problemSchema.index({ slug: 1 });
 problemSchema.index({ difficulty: 1 });
 problemSchema.index({ topics: 1 });
 
-module.exports = mongoose.model("Problem", problemSchema);
+const LANGUAGES = ["javascript", "python", "java", "cpp", "typescript"];
+
+const Problem = mongoose.model("Problem", problemSchema);
+
+// Projection that adds back the private fields needed to judge code
+Problem.JUDGING_FIELDS = ["+testCases", ...LANGUAGES.map((l) => `+codeTemplates.${l}.driver`)].join(" ");
+
+module.exports = Problem;

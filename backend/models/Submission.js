@@ -44,6 +44,8 @@ const submissionSchema = new mongoose.Schema(
         "wrong_answer",
         "compilation_error",
         "runtime_error",
+        "time_limit_exceeded",
+        "memory_limit_exceeded",
       ],
       required: true,
       index: true,

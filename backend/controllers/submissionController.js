@@ -12,7 +12,7 @@ const createSubmission = async (req, res) => {
   }
 
   try {
-    const problem = await Problem.findById(problemId);
+    const problem = await Problem.findById(problemId).select(Problem.JUDGING_FIELDS);
     if (!problem) {
       return res.status(404).json({ message: 'Problem not found' });
     }

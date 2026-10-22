@@ -80,6 +80,40 @@ describe('GET /api/problems/:slug', () => {
   });
 });
 
+describe('private problem fields', () => {
+  // Test cases (hidden ones included) and driver code are for judging only
+  const expectNoPrivateFields = (problem) => {
+    expect(problem.testCases).toBeUndefined();
+    expect(problem.codeTemplates.python).toEqual({ starter: 'def solve(): pass' });
+    expect(problem.codeTemplates.cpp).toEqual({ starter: 'int solve();' });
+  };
+
+  it('leaves test cases and drivers out of the problem page', async () => {
+    await createProblem({ slug: 'two-sum' });
+
+    const res = await request(app).get('/api/problems/two-sum');
+
+    expectNoPrivateFields(res.body);
+  });
+
+  it('leaves test cases and drivers out of the problem list', async () => {
+    await createProblem();
+
+    const res = await request(app).get('/api/problems');
+
+    expectNoPrivateFields(res.body.data[0]);
+  });
+
+  it('still loads them for judging', async () => {
+    const created = await createProblem();
+
+    const problem = await Problem.findById(created._id).select(Problem.JUDGING_FIELDS);
+
+    expect(problem.testCases).toHaveLength(2);
+    expect(problem.codeTemplates.cpp.driver).toBe('int main(){}');
+  });
+});
+
 describe('POST /api/problems', () => {
   const body = { title: 'New One', slug: 'New-One', difficulty: 'Medium', description: 'Do the thing' };
 
