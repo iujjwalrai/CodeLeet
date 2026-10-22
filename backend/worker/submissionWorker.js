@@ -71,6 +71,7 @@ async function processSubmission(job) {
         starterCode: template.starter,
         driverCode: template.driver,
         testCases: problem.testCases,
+        timeLimitMs: problem.timeLimitMs,
       };
 
       switch (language) {

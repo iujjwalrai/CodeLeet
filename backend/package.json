@@ -22,7 +22,8 @@
     "subWorker": "node worker/submissionWorker.js",
     "runWorker": "node worker/runWorker.js",
     "test": "jest",
-    "test:coverage": "jest --coverage"
+    "test:coverage": "jest --coverage",
+    "seed:problems": "node scripts/seedProblems.js"
   },
   "devDependencies": {
     "jest": "^29.7.0",

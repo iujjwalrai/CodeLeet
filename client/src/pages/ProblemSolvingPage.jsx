@@ -350,7 +350,7 @@ const ProblemPage = ({ problemId = "1" }) => {
           <h1 className="ps-title">{problem.title}</h1>
           <div className="ps-tags">
             <span className={`badge ${DIFF_BADGE[problem.difficulty] || "badge-neutral"}`}>{problem.difficulty}</span>
-            {(problem.topics || []).map(t => <span key={t} className="badge badge-neutral capitalize">{t}</span>)}
+            {(problem.topics || []).map(t => <span key={t} className="badge badge-neutral">{t}</span>)}
             {problem.stats?.acceptance != null && (
               <span className="ps-tag-meta">Acceptance {Number(problem.stats.acceptance).toFixed(0)}%</span>
             )}

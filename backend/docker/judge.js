@@ -11,7 +11,7 @@ const { v4: uuidv4 } = require("uuid");
  */
 
 const LIMITS = {
-  timeMs: 3000,           // wall time per test case
+  timeMs: 3000,           // wall time per test case, unless the problem sets its own
   memKb: 256 * 1024,      // resident memory per test case
   compileMs: 15000,
 };
@@ -43,7 +43,7 @@ docker run --rm \
 `;
 }
 
-function writeJob(workDir, { files, compile, run, testCases }) {
+function writeJob(workDir, { files, compile, run, inputs, timeMs }) {
   // The sandbox runs as nobody, so everything must be world-readable.
   fs.chmodSync(workDir, 0o755);
   for (const [name, content] of Object.entries(files)) {
@@ -51,16 +51,16 @@ function writeJob(workDir, { files, compile, run, testCases }) {
   }
   const testsDir = path.join(workDir, "tests");
   fs.mkdirSync(testsDir, { mode: 0o755 });
-  testCases.forEach((tc, i) => {
-    fs.writeFileSync(path.join(testsDir, `${i}.in`), tc.input ?? "", { mode: 0o644 });
+  inputs.forEach((input, i) => {
+    fs.writeFileSync(path.join(testsDir, `${i}.in`), input ?? "", { mode: 0o644 });
   });
   const conf = [
     `compile=${compile}`,
     `run=${run}`,
     "tests_dir=/app/tests",
     "workdir=/tmp/w",
-    `count=${testCases.length}`,
-    `time_ms=${LIMITS.timeMs}`,
+    `count=${inputs.length}`,
+    `time_ms=${timeMs}`,
     `mem_kb=${LIMITS.memKb}`,
     `compile_ms=${LIMITS.compileMs}`,
     "stop_on_limit=1",
@@ -104,7 +104,7 @@ function resourcesFrom(tests) {
 }
 
 /* Turns a cl-meter report into the result shape the workers publish */
-function verdictFrom(report, testCases) {
+function verdictFrom(report, testCases, { timeMs = LIMITS.timeMs } = {}) {
   const compile = report.compile || {};
   if (compile.ran && !compile.ok) {
     return {
@@ -160,7 +160,7 @@ function verdictFrom(report, testCases) {
       };
     }
     case "time_limit_exceeded":
-      return { status: kind, output: null, failedTestCaseIndex: index, error: `Time limit exceeded ${where} (limit ${LIMITS.timeMs} ms)`, ...base };
+      return { status: kind, output: null, failedTestCaseIndex: index, error: `Time limit exceeded ${where} (limit ${timeMs} ms)`, ...base };
     case "memory_limit_exceeded":
       return { status: kind, output: null, failedTestCaseIndex: index, error: `Memory limit exceeded ${where} (limit ${LIMITS.memKb / 1024} MB)`, ...base };
     default:
@@ -181,16 +181,16 @@ function dockerRun(cmd, timeout) {
 }
 
 /**
- * judge({ image, prefix, files, compile, run, testCases })
+ * execute({ image, prefix, files, compile, run, inputs, timeMs })
  *   files    { filename: content } written to /app in the container
  *   compile  shell command run once in the work dir (copies from /app)
- *   run      single command run per test case, input on stdin
+ *   run      single command run per input, the input on stdin
+ *   timeMs   wall-time limit per input
+ *
+ * Returns cl-meter's report, or null when the program stopped cl-meter
+ * before it could print one.
  */
-async function judge({ image, prefix, files, compile, run, testCases }) {
-  if (!Array.isArray(testCases) || testCases.length === 0) {
-    throw new Error("No test cases provided");
-  }
-
+async function execute({ image, prefix, files, compile, run, inputs, timeMs = LIMITS.timeMs }) {
   // Host path shared with the sandbox containers. When the worker itself runs in
   // Docker, mount the same host path at the same path inside it.
   const baseDir = process.env.CODE_TMP_DIR || path.join(process.cwd(), "tmp");
@@ -198,22 +198,33 @@ async function judge({ image, prefix, files, compile, run, testCases }) {
   const workDir = fs.mkdtempSync(path.join(baseDir, `${prefix}-${uuidv4()}-`));
 
   try {
-    writeJob(workDir, { files, compile, run, testCases });
-    const timeout = LIMITS.compileMs + testCases.length * (LIMITS.timeMs + 1000) + 15000;
+    writeJob(workDir, { files, compile, run, inputs, timeMs });
+    const timeout = LIMITS.compileMs + inputs.length * (timeMs + 1000) + 15000;
     const { stdout, exitCode } = await dockerRun(sandboxCommand(image, workDir), timeout);
     if (exitCode === 2) throw new Error("Judge could not read its job configuration");
 
-    let report;
     try {
-      report = JSON.parse(stdout);
+      return JSON.parse(stdout);
     } catch {
-      // cl-meter never finished its report: the program took it down
-      return { status: "runtime_error", output: null, error: "The program stopped the judge before it finished", time: 0, memory: 0, resources: null };
+      return null;
     }
-    return verdictFrom(report, testCases);
   } finally {
     fs.rmSync(workDir, { recursive: true, force: true });
   }
 }
 
-module.exports = { judge, verdictFrom, LIMITS };
+/* Runs the code against every test case and returns the verdict */
+async function judge({ image, prefix, files, compile, run, testCases, timeMs = LIMITS.timeMs }) {
+  if (!Array.isArray(testCases) || testCases.length === 0) {
+    throw new Error("No test cases provided");
+  }
+
+  const report = await execute({ image, prefix, files, compile, run, timeMs, inputs: testCases.map((tc) => tc.input) });
+  if (!report) {
+    // cl-meter never finished its report: the program took it down
+    return { status: "runtime_error", output: null, error: "The program stopped the judge before it finished", time: 0, memory: 0, resources: null };
+  }
+  return verdictFrom(report, testCases, { timeMs });
+}
+
+module.exports = { judge, execute, verdictFrom, LIMITS };
