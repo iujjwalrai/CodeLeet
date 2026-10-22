@@ -10,6 +10,7 @@ import { wsUrl } from "../api/urls";
 import { useLocation, useNavigate } from "react-router-dom";
 import LogoutButton from "../components/Logout";
 import { Logo, ThemeToggle } from "../components/Navbar";
+import ResourceTimeline from "../components/ResourceTimeline";
 import { useAuth } from "../context/AuthContext";
 import { useTheme } from "../theme";
 import toast from "react-hot-toast";
@@ -208,6 +209,16 @@ const ProblemPage = ({ problemId = "1" }) => {
     finally { setSubmissionsLoading(false); }
   };
 
+  // The list leaves out what the judge measured, so fetch the full submission
+  const openSubmission = async (sub) => {
+    setSubmitData(sub);
+    setActiveTab("result");
+    try {
+      const res = await axios.get(`/api/submissions/${sub._id}`);
+      setSubmitData((cur) => (cur?._id === sub._id ? res.data : cur));
+    } catch (err) { console.error("Failed to load submission", err); }
+  };
+
   const handleRun = async () => {
     // Show the running state straight away and clear the previous result
     setRunStatus("Running");
@@ -226,11 +237,11 @@ const ProblemPage = ({ problemId = "1" }) => {
         const data = msg.data;
         setRunStatus(data.status);
         if (data.status === "accepted") {
-          setTestResults([{ type: "accepted", passedCount: data.passedCount ?? data.totalCount, totalCount: data.totalCount, time: `${data.time} ms` }]);
+          setTestResults([{ type: "accepted", passedCount: data.passedCount ?? data.totalCount, totalCount: data.totalCount, time: `${data.time} ms`, resources: data.resources }]);
           ws.close(); return;
         }
         if (data.status === "wrong_answer") {
-          setTestResults([{ type: "wrong_answer", passedCount: data.passedCount ?? 0, totalCount: data.totalCount ?? 0, failedIndex: (data.failedTestCaseIndex ?? 0) + 1, input: data.failedTestCase?.input || "—", expected: data.failedTestCase?.output || "—", output: data.output || "—", time: `${data.time} ms` }]);
+          setTestResults([{ type: "wrong_answer", passedCount: data.passedCount ?? 0, totalCount: data.totalCount ?? 0, failedIndex: (data.failedTestCaseIndex ?? 0) + 1, input: data.failedTestCase?.input || "—", expected: data.failedTestCase?.output || "—", output: data.output || "—", time: `${data.time} ms`, resources: data.resources }]);
           ws.close(); return;
         }
         if (data.status === "compilation_error") {
@@ -238,7 +249,7 @@ const ProblemPage = ({ problemId = "1" }) => {
           ws.close(); return;
         }
         if (["runtime_error", "time_limit_exceeded", "memory_limit_exceeded"].includes(data.status)) {
-          setTestResults([{ type: data.status, error: data.error, time: `${data.time} ms` }]);
+          setTestResults([{ type: data.status, error: data.error, time: `${data.time} ms`, resources: data.resources }]);
           ws.close(); return;
         }
         if (data.status === "error") {
@@ -377,7 +388,7 @@ const ProblemPage = ({ problemId = "1" }) => {
               {submissions.map(sub => (
                 <button key={sub._id}
                   className="ps-sub-item"
-                  onClick={() => { setSubmitData(sub); setActiveTab("result"); }}>
+                  onClick={() => openSubmission(sub)}>
                   <span className={`ps-sub-status ps-tone-${toneOf(sub.status)}`}>
                     {sub.status === "accepted" ? <Check size={14} /> : <X size={14} />}
                     {labelOf(sub.status)}
@@ -447,6 +458,8 @@ const ProblemPage = ({ problemId = "1" }) => {
               {["compilation_error", "runtime_error", "time_limit_exceeded", "memory_limit_exceeded", "error"].includes(submitData.status) && submitData.error && (
                 <pre className={`ps-error ps-error-${toneOf(submitData.status)}`}>{submitData.error}</pre>
               )}
+
+              <ResourceTimeline resources={submitData.resources ?? submitData.analysis?.resources} />
             </div>
           )}
         </>}
@@ -514,6 +527,7 @@ const ProblemPage = ({ problemId = "1" }) => {
                 <div className="ps-result-sub">{r.passedCount} / {r.totalCount} test cases passed</div>
                 <div className="ps-progress"><div className="ps-progress-fill ps-fill-ok" style={{ width: `${(r.passedCount / r.totalCount) * 100}%` }} /></div>
               </>}
+              <ResourceTimeline resources={r.resources} />
             </div>
           );
           if (r.type === "wrong_answer") return (
@@ -532,6 +546,7 @@ const ProblemPage = ({ problemId = "1" }) => {
                 <div className="ps-case-row"><span>Expected</span><pre>{r.expected}</pre></div>
                 <div className="ps-case-row"><span>Output</span><pre className="ps-tone-bad">{r.output}</pre></div>
               </div>
+              <ResourceTimeline resources={r.resources} />
             </div>
           );
           return (
@@ -541,6 +556,7 @@ const ProblemPage = ({ problemId = "1" }) => {
                 <span className="ps-result-time">{r.time}</span>
               </div>
               <pre className={`ps-error ps-error-${toneOf(r.type)}`}>{r.error}</pre>
+              <ResourceTimeline resources={r.resources} />
             </div>
           );
         })}

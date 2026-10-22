@@ -1,0 +1,276 @@
+/* ── resource timeline (ResourceTimeline.jsx) ── */
+.rt {
+    --rt-gutter: 52px;
+    margin-top: 18px;
+    padding: 14px;
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    display: grid;
+    gap: 14px
+}
+
+.rt-head {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 12px
+}
+
+.rt-title {
+    font-size: 13px;
+    font-weight: 600
+}
+
+.rt-sub,
+.rt-note {
+    font-size: 12px;
+    color: var(--dim)
+}
+
+.rt-note {
+    margin: 0
+}
+
+.rt-stats {
+    display: flex;
+    gap: 18px;
+    margin: 0
+}
+
+.rt-stats dt {
+    font-size: 11px;
+    color: var(--faint)
+}
+
+.rt-stats dd {
+    margin: 2px 0 0;
+    font-size: 13px;
+    font-weight: 600;
+    font-variant-numeric: tabular-nums
+}
+
+/* charts */
+.rt-charts {
+    position: relative;
+    display: grid;
+    gap: 10px;
+    outline: none;
+    touch-action: pan-y
+}
+
+.rt-charts:focus-visible {
+    box-shadow: 0 0 0 2px var(--accent-soft);
+    border-radius: 6px
+}
+
+.rt-track-title {
+    font-size: 11px;
+    font-weight: 500;
+    color: var(--dim);
+    margin-bottom: 10px
+}
+
+.rt-track-body {
+    display: flex
+}
+
+.rt-yaxis {
+    width: var(--rt-gutter);
+    flex: none;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    padding-right: 8px;
+    text-align: right;
+    font-size: 10px;
+    line-height: 1;
+    color: var(--faint);
+    font-variant-numeric: tabular-nums;
+    margin: -5px 0
+}
+
+.rt-plot {
+    position: relative;
+    flex: 1;
+    min-width: 0;
+    height: 72px
+}
+
+.rt-plot svg {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    overflow: visible
+}
+
+.rt-grid {
+    stroke: var(--line);
+    stroke-width: 1
+}
+
+.rt-area {
+    fill: var(--accent);
+    opacity: 0.1
+}
+
+.rt-line {
+    fill: none;
+    stroke: var(--accent);
+    stroke-width: 2;
+    stroke-linejoin: round;
+    stroke-linecap: round
+}
+
+.rt-crosshair {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    width: 1px;
+    background: var(--line-2);
+    pointer-events: none
+}
+
+.rt-dot {
+    position: absolute;
+    width: 8px;
+    height: 8px;
+    margin: -4px 0 0 -4px;
+    border-radius: 50%;
+    background: var(--accent);
+    box-shadow: 0 0 0 2px var(--surface);
+    pointer-events: none
+}
+
+.rt-xaxis {
+    display: flex;
+    justify-content: space-between;
+    padding-left: var(--rt-gutter);
+    margin-top: -4px;
+    font-size: 10px;
+    color: var(--faint);
+    font-variant-numeric: tabular-nums
+}
+
+.rt-readout {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px 14px;
+    min-height: 18px;
+    font-size: 11px;
+    color: var(--dim);
+    font-variant-numeric: tabular-nums
+}
+
+.rt-readout b {
+    color: var(--fg);
+    font-weight: 600
+}
+
+/* per-test bars */
+.rt-tests {
+    display: grid;
+    gap: 6px
+}
+
+.rt-tests-head {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 2px 12px
+}
+
+.rt-tests-head .rt-track-title {
+    margin-bottom: 0
+}
+
+.rt-tests-readout {
+    font-size: 11px;
+    color: var(--dim);
+    font-variant-numeric: tabular-nums
+}
+
+.rt-bars-row {
+    display: flex;
+    align-items: flex-end
+}
+
+.rt-bars-label {
+    width: var(--rt-gutter);
+    flex: none;
+    padding-right: 8px;
+    text-align: right;
+    font-size: 10px;
+    color: var(--faint)
+}
+
+.rt-bars {
+    flex: 1;
+    min-width: 0;
+    height: 28px;
+    display: flex;
+    align-items: flex-end;
+    gap: 2px
+}
+
+.rt-bar {
+    flex: 1 1 0;
+    max-width: 24px;
+    height: 100%;
+    display: flex;
+    align-items: flex-end;
+    cursor: default
+}
+
+.rt-bar > span {
+    width: 100%;
+    border-radius: 4px 4px 0 0;
+    background: var(--line-2);
+    transition: background 120ms
+}
+
+.rt-bar-heavy > span {
+    background: var(--accent)
+}
+
+.rt-bar-hover > span {
+    background: var(--dim)
+}
+
+.rt-bar-heavy.rt-bar-hover > span {
+    background: var(--accent-hover)
+}
+
+.rt-table summary {
+    font-size: 11px;
+    color: var(--dim);
+    cursor: pointer;
+    width: fit-content
+}
+
+.rt-table table {
+    margin-top: 8px;
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 12px;
+    font-variant-numeric: tabular-nums
+}
+
+.rt-table th,
+.rt-table td {
+    padding: 4px 8px;
+    border-bottom: 1px solid var(--line);
+    text-align: right
+}
+
+.rt-table th {
+    font-weight: 500;
+    color: var(--dim)
+}
+
+.rt-table th:first-child,
+.rt-table td:first-child {
+    text-align: left
+}

@@ -86,7 +86,10 @@ function runtimeMessage(t) {
   return `Program exited with code ${t.exit}`;
 }
 
-/* The heaviest test's measurements, for the resource timeline */
+/*
+ * For the resource timeline: the heaviest test's samples, plus time and
+ * peak memory of every test that ran.
+ */
 function resourcesFrom(tests) {
   if (tests.length === 0) return null;
   const t = tests.reduce((a, b) => (b.cpuMs > a.cpuMs ? b : a));
@@ -96,6 +99,7 @@ function resourcesFrom(tests) {
     cpuMs: Math.round(t.cpuMs),
     wallMs: Math.round(t.wallMs),
     timeline: t.timeline.map(([ms, rssKb, cpuMs]) => ({ t: ms, rssKb, cpuMs })),
+    tests: tests.map((x) => ({ wallMs: Math.round(x.wallMs * 10) / 10, peakKb: x.peakKb })),
   };
 }
 
