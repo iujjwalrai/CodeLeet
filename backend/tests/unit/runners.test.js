@@ -59,41 +59,79 @@ afterEach(() => {
 
 const leftoverJobDirs = () => fs.readdirSync(path.join(workRoot, 'tmp'));
 
+// Fake cl-meter: reads the job the runner wrote (mounted at /app) and answers
+// with a report like the real one. `test(input, i)` overrides fields of each
+// test result; cl-meter stops after a time or memory limit, so does this.
+const meterReport = (cmd, { compile = {}, test = (input) => ({ stdout: addNumbers(input) }) } = {}) => {
+  const jobDir = cmd.match(/-v "([^"]+):\/app:ro"/)[1];
+  const conf = Object.fromEntries(
+    fs.readFileSync(path.join(jobDir, 'job.conf'), 'utf8').trim().split('\n')
+      .map((line) => [line.slice(0, line.indexOf('=')), line.slice(line.indexOf('=') + 1)]),
+  );
+  const compileResult = { ran: true, ok: true, exit: 0, signal: 0, tle: false, wallMs: 120, log: '', ...compile };
+  const tests = [];
+  for (let i = 0; compileResult.ok && i < Number(conf.count); i++) {
+    const input = fs.readFileSync(path.join(jobDir, 'tests', `${i}.in`), 'utf8');
+    const t = {
+      exit: 0, signal: 0, tle: false, mle: false, wallMs: 4 + i, cpuMs: 3 + i, peakKb: 2048 + i,
+      stdout: '', stdoutTruncated: false, stderr: '', timeline: [[0, 100, 0], [3, 2048, 3]],
+      ...test(input, i),
+    };
+    tests.push(t);
+    if (t.tle || t.mle) break;
+  }
+  return { stdout: JSON.stringify({ version: 1, compile: compileResult, tests }) };
+};
+
+// Answers cl-meter jobs (C++/Java) and plain runs (Python) alike.
+const anyRunner = (cmd, stdin) => (cmd.includes('cl-meter') ? meterReport(cmd) : { stdout: addNumbers(stdin) });
+
+const dockerExit = (code, stderr) => Object.assign(new Error(`Command failed\n${stderr}`), { code });
+
 describe.each([
-  ['runCpp', runCpp, 'g++', 'codeleet-cpp', 'Solution.cpp:4:3: error: expected \';\''],
-  ['runJava', runJava, 'javac', 'codeleet-java', 'Solution.java:4: error: \';\' expected'],
-])('%s', (_name, run, compiler, image, compilerError) => {
-  const isCompile = (cmd) => cmd.includes(compiler);
+  ['runCpp', runCpp, 'g++', 'codeleet-cpp', 'Solution.cpp:4:3: error: expected \';\'', ['Solution.cpp', 'Main.cpp']],
+  ['runJava', runJava, 'javac', 'codeleet-java', 'Solution.java:4: error: \';\' expected', ['Solution.java', 'Main.java']],
+])('%s', (_name, run, compiler, image, compilerError, codeFiles) => {
   const input = { userCode: 'user code', driverCode: 'driver code', testCases };
 
-  it('returns accepted when every test case matches', async () => {
-    fakeDocker((cmd, stdin) => (isCompile(cmd) ? {} : { stdout: addNumbers(stdin) }));
+  it('returns accepted with the slowest time and highest memory across test cases', async () => {
+    fakeDocker((cmd) => meterReport(cmd));
 
     const result = await run(input);
 
-    expect(result).toMatchObject({ status: 'accepted', passedCount: 3, totalCount: 3, error: null });
-    expect(typeof result.time).toBe('number');
+    expect(result).toMatchObject({ status: 'accepted', passedCount: 3, totalCount: 3, error: null, time: 6, memory: 2050 });
+    expect(result.resources).toMatchObject({ testIndex: 2, peakKb: 2050, cpuMs: 5 });
+    expect(result.resources.timeline).toEqual([{ t: 0, rssKb: 100, cpuMs: 0 }, { t: 3, rssKb: 2048, cpuMs: 3 }]);
   });
 
-  it('compiles once and runs one container per test case, passing input on stdin', async () => {
-    const seenInputs = [];
-    fakeDocker((cmd, stdin) => {
-      if (isCompile(cmd)) return {};
-      seenInputs.push(stdin);
-      return { stdout: addNumbers(stdin) };
+  it('runs everything in one container, with code, inputs and job config in the mounted folder', async () => {
+    let job;
+    fakeDocker((cmd) => {
+      const jobDir = cmd.match(/-v "([^"]+):\/app:ro"/)[1];
+      job = {
+        files: fs.readdirSync(jobDir).sort(),
+        inputs: testCases.map((_, i) => fs.readFileSync(path.join(jobDir, 'tests', `${i}.in`), 'utf8')),
+        code: fs.readFileSync(path.join(jobDir, codeFiles[0]), 'utf8'),
+        conf: fs.readFileSync(path.join(jobDir, 'job.conf'), 'utf8'),
+      };
+      return meterReport(cmd);
     });
 
     await run(input);
 
-    expect(exec).toHaveBeenCalledTimes(1 + testCases.length);
-    expect(seenInputs).toEqual(testCases.map((tc) => tc.input));
+    expect(exec).toHaveBeenCalledTimes(1);
+    expect(job.files).toEqual([...codeFiles, 'job.conf', 'tests'].sort());
+    expect(job.inputs).toEqual(testCases.map((tc) => tc.input));
+    expect(job.code).toBe('user code');
+    expect(job.conf).toContain(`count=${testCases.length}`);
+    expect(job.conf.split('\n').find((l) => l.startsWith('compile='))).toContain(compiler);
+    expect(job.conf).toContain('stop_on_limit=1');
+    // Expected outputs never go into the container
+    expect(job.conf).not.toContain(testCases[1].output);
   });
 
   it('reports the first failing test case on wrong answer but keeps counting passes', async () => {
-    fakeDocker((cmd, stdin) => {
-      if (isCompile(cmd)) return {};
-      return { stdout: stdin === '5 5' ? '11\n' : addNumbers(stdin) };
-    });
+    fakeDocker((cmd) => meterReport(cmd, { test: (stdin) => ({ stdout: stdin === '5 5' ? '11\n' : addNumbers(stdin) }) }));
 
     const result = await run(input);
 
@@ -109,37 +147,94 @@ describe.each([
   });
 
   it('ignores surrounding whitespace when comparing output', async () => {
-    fakeDocker((cmd, stdin) => (isCompile(cmd) ? {} : { stdout: `  ${addNumbers(stdin)}\n\n` }));
+    fakeDocker((cmd) => meterReport(cmd, { test: (stdin) => ({ stdout: `  ${addNumbers(stdin)}\n\n` }) }));
 
     await expect(run(input)).resolves.toMatchObject({ status: 'accepted' });
   });
 
-  it('returns compilation_error with the compiler output (without the docker command)', async () => {
-    fakeDocker((cmd) => (isCompile(cmd) ? { error: commandFailed(cmd, compilerError) } : { stdout: '' }));
+  it('ignores stderr when the program exits normally', async () => {
+    fakeDocker((cmd) => meterReport(cmd, { test: (stdin) => ({ stdout: addNumbers(stdin), stderr: 'debug: n=2' }) }));
+
+    await expect(run(input)).resolves.toMatchObject({ status: 'accepted' });
+  });
+
+  it('returns compilation_error with the compiler output', async () => {
+    fakeDocker((cmd) => meterReport(cmd, { compile: { ok: false, exit: 1, log: `${compilerError}\n` } }));
 
     const result = await run(input);
 
-    expect(result.status).toBe('compilation_error');
-    expect(result.error).toBe(compilerError);
-    expect(exec).toHaveBeenCalledTimes(1);
+    expect(result).toMatchObject({ status: 'compilation_error', error: compilerError });
   });
 
-  it('returns runtime_error when the program crashes', async () => {
-    fakeDocker((cmd) => (isCompile(cmd) ? {} : { error: commandFailed(cmd, 'Segmentation fault (core dumped)') }));
+  it('says so when compiling times out', async () => {
+    fakeDocker((cmd) => meterReport(cmd, { compile: { ok: false, tle: true, signal: 9 } }));
+
+    await expect(run(input)).resolves.toMatchObject({ status: 'compilation_error', error: 'Compilation timed out' });
+  });
+
+  it('returns runtime_error with stderr, or the signal when there is none', async () => {
+    fakeDocker((cmd) => meterReport(cmd, { test: (_s, i) => (i === 1 ? { exit: 1, stderr: 'Exception: boom\n' } : { stdout: '3' }) }));
+    await expect(run(input)).resolves.toMatchObject({ status: 'runtime_error', error: 'Exception: boom', failedTestCaseIndex: 1 });
+
+    fakeDocker((cmd) => meterReport(cmd, { test: () => ({ signal: 11 }) }));
+    await expect(run(input)).resolves.toMatchObject({ status: 'runtime_error', error: 'Program was killed by SIGSEGV' });
+
+    fakeDocker((cmd) => meterReport(cmd, { test: () => ({ signal: 25 }) }));
+    await expect(run(input)).resolves.toMatchObject({ status: 'runtime_error', error: 'Output limit exceeded (10 MB)' });
+  });
+
+  it('returns time_limit_exceeded and counts tests that never ran as failed', async () => {
+    fakeDocker((cmd) => meterReport(cmd, { test: (stdin, i) => (i === 1 ? { tle: true, signal: 9, wallMs: 3001 } : { stdout: addNumbers(stdin) }) }));
 
     const result = await run(input);
 
-    expect(result.status).toBe('runtime_error');
-    expect(result.error).toBe('Segmentation fault (core dumped)');
+    expect(result).toMatchObject({
+      status: 'time_limit_exceeded',
+      passedCount: 1,
+      totalCount: 3,
+      failedTestCaseIndex: 1,
+      error: 'Time limit exceeded on test case 2 (limit 3000 ms)',
+    });
   });
 
-  it('removes the job directory afterwards, on success and on failure', async () => {
-    fakeDocker((cmd, stdin) => (isCompile(cmd) ? {} : { stdout: addNumbers(stdin) }));
+  it('returns memory_limit_exceeded when cl-meter, the JVM or the container\'s OOM killer stops the program', async () => {
+    fakeDocker((cmd) => meterReport(cmd, { test: () => ({ mle: true, signal: 9, peakKb: 270000 }) }));
+    await expect(run(input)).resolves.toMatchObject({ status: 'memory_limit_exceeded', error: 'Memory limit exceeded on test case 1 (limit 256 MB)' });
+
+    fakeDocker((cmd) => meterReport(cmd, { test: () => ({ exit: 1, stderr: 'Exception in thread "main" java.lang.OutOfMemoryError: Java heap space' }) }));
+    await expect(run(input)).resolves.toMatchObject({ status: 'memory_limit_exceeded' });
+
+    fakeDocker((cmd) => meterReport(cmd, { test: () => ({ signal: 9, peakKb: 250000 }) }));
+    await expect(run(input)).resolves.toMatchObject({ status: 'memory_limit_exceeded' });
+
+    // A SIGKILL far below the memory limit is not a memory problem
+    fakeDocker((cmd) => meterReport(cmd, { test: () => ({ signal: 9, peakKb: 3000 }) }));
+    await expect(run(input)).resolves.toMatchObject({ status: 'runtime_error', error: 'Program was killed by SIGKILL' });
+  });
+
+  it('returns runtime_error when the program kills cl-meter before it reports', async () => {
+    fakeDocker(() => ({ stdout: '{"version":1,"compile":{"ran":true,"ok":true},"tests":[{"exit":0' }));
+
+    await expect(run(input)).resolves.toMatchObject({ status: 'runtime_error', error: 'The program stopped the judge before it finished' });
+  });
+
+  it('throws when Docker cannot start the sandbox, so the worker reports an error', async () => {
+    fakeDocker(() => ({ error: dockerExit(125, 'Unable to find image') }));
+
+    await expect(run(input)).rejects.toThrow('Sandbox failed to start: ');
+  });
+
+  it('removes the job directory afterwards, on success, on failure and when Docker fails', async () => {
+    fakeDocker((cmd) => meterReport(cmd));
     await run(input);
     expect(leftoverJobDirs()).toEqual([]);
 
-    fakeDocker((cmd) => ({ error: commandFailed(cmd, compilerError) }));
+    fakeDocker((cmd) => meterReport(cmd, { compile: { ok: false, log: compilerError } }));
     await run(input);
+    expect(leftoverJobDirs()).toEqual([]);
+
+    fakeDocker(() => ({ error: dockerExit(125, 'no such image') }));
+    await expect(run(input)).rejects.toThrow();
     expect(leftoverJobDirs()).toEqual([]);
   });
 
@@ -147,44 +242,24 @@ describe.each([
     await expect(run({ ...input, testCases: [] })).rejects.toThrow('No test cases provided');
   });
 
-  it('runs every container inside the sandbox limits', async () => {
-    fakeDocker((cmd, stdin) => (isCompile(cmd) ? {} : { stdout: addNumbers(stdin) }));
+  it('runs the container inside the sandbox limits with a read-only job folder', async () => {
+    fakeDocker((cmd) => meterReport(cmd));
 
     await run(input);
 
-    for (const [cmd] of exec.mock.calls) {
-      expect(cmd).toContain(image);
-      expect(cmd).toContain('--network none');
-      expect(cmd).toContain('--read-only');
-      expect(cmd).toContain('--cap-drop ALL');
-      expect(cmd).toContain('--security-opt no-new-privileges');
-      expect(cmd).toContain('--user nobody');
-      expect(cmd).toMatch(/--memory="\d+m"/);
-      expect(cmd).toMatch(/--pids-limit \d+/);
-    }
-    // Only the compile step may write to the job directory.
-    const runCalls = exec.mock.calls.filter(([cmd]) => !isCompile(cmd));
-    for (const [cmd] of runCalls) {
-      expect(cmd).toMatch(/:\/app:ro"/);
-    }
-  });
-});
-
-describe('runCpp /tmp mounts', () => {
-  // Docker mounts --tmpfs as noexec unless told otherwise. The run step copies
-  // the compiled binary into /tmp and executes it, so it needs `exec`; the
-  // compile step never executes from /tmp and keeps noexec.
-  it('allows exec on the run step only', async () => {
-    fakeDocker((cmd, stdin) => (cmd.includes('g++') ? {} : { stdout: addNumbers(stdin) }));
-
-    await runCpp({ userCode: 'x', driverCode: 'y', testCases });
-
-    const tmpfs = (cmd) => cmd.match(/--tmpfs (\S+)/)[1].split(':')[1].split(',');
-    const [compileCmd, ...runCmds] = exec.mock.calls.map(([cmd]) => cmd);
-    expect(tmpfs(compileCmd)).not.toContain('exec');
-    for (const cmd of runCmds) {
-      expect(tmpfs(cmd)).toContain('exec');
-    }
+    const [[cmd]] = exec.mock.calls;
+    expect(cmd).toContain(image);
+    expect(cmd).toContain('--network none');
+    expect(cmd).toContain('--read-only');
+    expect(cmd).toContain('--cap-drop ALL');
+    expect(cmd).toContain('--security-opt no-new-privileges');
+    expect(cmd).toContain('--user nobody');
+    expect(cmd).toMatch(/--memory="\d+m"/);
+    expect(cmd).toMatch(/--pids-limit \d+/);
+    expect(cmd).toMatch(/:\/app:ro"/);
+    // Compiled programs run from /tmp, so the tmpfs must allow exec
+    expect(cmd.match(/--tmpfs (\S+)/)[1].split(':')[1].split(',')).toContain('exec');
+    expect(cmd.trim()).toMatch(/cl-meter \/app\/job\.conf$/);
   });
 });
 
@@ -257,12 +332,12 @@ describe('CODE_TMP_DIR', () => {
   });
 
   it.each([
-    ['runCpp', runCpp, 'g++'],
-    ['runJava', runJava, 'javac'],
-    ['runPython', runPython, null],
-  ])('%s writes job folders under CODE_TMP_DIR and mounts that path', async (_name, run, compiler) => {
+    ['runCpp', runCpp],
+    ['runJava', runJava],
+    ['runPython', runPython],
+  ])('%s writes job folders under CODE_TMP_DIR and mounts that path', async (_name, run) => {
     process.env.CODE_TMP_DIR = path.join(workRoot, 'shared', 'jobs');
-    fakeDocker((cmd, stdin) => (compiler && cmd.includes(compiler) ? {} : { stdout: addNumbers(stdin) }));
+    fakeDocker(anyRunner);
 
     await run({ userCode: 'x', driverCode: 'y', testCases });
 
@@ -281,12 +356,12 @@ describe('sandbox image overrides', () => {
   });
 
   it.each([
-    ['runCpp', 'SANDBOX_IMAGE_CPP', runCpp, 'g++'],
-    ['runJava', 'SANDBOX_IMAGE_JAVA', runJava, 'javac'],
-    ['runPython', 'SANDBOX_IMAGE_PYTHON', runPython, null],
-  ])('%s runs every container from %s when it is set', async (_name, envVar, run, compiler) => {
+    ['runCpp', 'SANDBOX_IMAGE_CPP', runCpp],
+    ['runJava', 'SANDBOX_IMAGE_JAVA', runJava],
+    ['runPython', 'SANDBOX_IMAGE_PYTHON', runPython],
+  ])('%s runs every container from %s when it is set', async (_name, envVar, run) => {
     process.env[envVar] = 'ghcr.io/example/sandbox:abc123';
-    fakeDocker((cmd, stdin) => (compiler && cmd.includes(compiler) ? {} : { stdout: addNumbers(stdin) }));
+    fakeDocker(anyRunner);
 
     await run({ userCode: 'x', driverCode: 'y', testCases });
 

@@ -19,6 +19,8 @@ const FINAL_STATUSES = new Set([
   "wrong_answer",
   "compilation_error",
   "runtime_error",
+  "time_limit_exceeded",
+  "memory_limit_exceeded",
 ]);
 
 async function publishJobUpdate(jobId, data) {

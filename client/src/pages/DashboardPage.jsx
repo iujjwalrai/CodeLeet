@@ -23,6 +23,8 @@ const STATUS_LABEL = {
   wrong_answer: "Wrong Answer",
   compilation_error: "Compile Error",
   runtime_error: "Runtime Error",
+  time_limit_exceeded: "Time Limit",
+  memory_limit_exceeded: "Memory Limit",
   error: "Internal Error",
 };
 const LANG_LABEL = { cpp: "C++", java: "Java", python: "Python", javascript: "JS" };

@@ -80,16 +80,21 @@ const defineCodeleetThemes = (monaco) => {
   });
 };
 
-const FINAL_STATUSES = ["accepted", "wrong_answer", "compilation_error", "runtime_error", "error"];
+const FINAL_STATUSES = ["accepted", "wrong_answer", "compilation_error", "runtime_error", "time_limit_exceeded", "memory_limit_exceeded", "error"];
 
 const STATUS_LABEL = {
   accepted: "Accepted",
   wrong_answer: "Wrong Answer",
   compilation_error: "Compilation Error",
   runtime_error: "Runtime Error",
+  time_limit_exceeded: "Time Limit Exceeded",
+  memory_limit_exceeded: "Memory Limit Exceeded",
   error: "Internal Error",
 };
 const labelOf = (s) => STATUS_LABEL[s] || (s || "").replace(/_/g, " ").replace(/\b\w/g, c => c.toUpperCase());
+
+/* Peak memory in KB → "41.2 MB"; older submissions stored 0 */
+const formatMemory = (kb) => (!kb ? "—" : kb >= 1024 ? `${(kb / 1024).toFixed(1)} MB` : `${kb} KB`);
 
 /* Verdict status → colour tone used by the CSS */
 const toneOf = (status) =>
@@ -232,8 +237,8 @@ const ProblemPage = ({ problemId = "1" }) => {
           setTestResults([{ type: "compilation_error", error: data.error, time: `${data.time} ms` }]);
           ws.close(); return;
         }
-        if (data.status === "runtime_error") {
-          setTestResults([{ type: "runtime_error", error: data.error, time: `${data.time} ms` }]);
+        if (["runtime_error", "time_limit_exceeded", "memory_limit_exceeded"].includes(data.status)) {
+          setTestResults([{ type: data.status, error: data.error, time: `${data.time} ms` }]);
           ws.close(); return;
         }
         if (data.status === "error") {
@@ -408,7 +413,7 @@ const ProblemPage = ({ problemId = "1" }) => {
                 <div className="ps-verdict-sub">{submitData.passedCount} / {submitData.totalCount} test cases passed</div>
               )}
 
-              {(submitData.status === "accepted" || submitData.status === "wrong_answer") && (
+              {!["compilation_error", "error"].includes(submitData.status) && (submitData.time != null || submitData.memory) && (
                 <div className="ps-metrics">
                   <div className="ps-metric">
                     <span className="ps-metric-label">Runtime</span>
@@ -416,7 +421,7 @@ const ProblemPage = ({ problemId = "1" }) => {
                   </div>
                   <div className="ps-metric">
                     <span className="ps-metric-label">Memory</span>
-                    <span className="ps-metric-value">{submitData.memory ?? "—"}<small> KB</small></span>
+                    <span className="ps-metric-value">{formatMemory(submitData.memory)}</span>
                   </div>
                 </div>
               )}
@@ -439,7 +444,7 @@ const ProblemPage = ({ problemId = "1" }) => {
                 </div>
               )}
 
-              {["compilation_error", "runtime_error", "error"].includes(submitData.status) && submitData.error && (
+              {["compilation_error", "runtime_error", "time_limit_exceeded", "memory_limit_exceeded", "error"].includes(submitData.status) && submitData.error && (
                 <pre className={`ps-error ps-error-${toneOf(submitData.status)}`}>{submitData.error}</pre>
               )}
             </div>
