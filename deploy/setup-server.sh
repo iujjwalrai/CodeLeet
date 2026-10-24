@@ -5,9 +5,11 @@
 #
 #   sudo bash setup-server.sh [deploy-user]     # default user: ubuntu
 #
-# Installs Docker, adds swap if there is none, opens ports 80/443 in the
-# server's own firewall, creates the job folder and the app folder, and lets
-# the deploy user run Docker. Safe to run again.
+# Opens ports 80/443 in the server's own firewall where the image blocks them
+# (Oracle), installs Docker, adds swap if there is none, creates the job
+# folder and the app folder, and lets the deploy user run Docker. Safe to
+# run again. The cloud firewall (Oracle security list, Azure network
+# security group) is set in the cloud console, not here.
 
 set -euo pipefail
 
@@ -21,10 +23,31 @@ SWAP_SIZE=2G
 [[ "${ID:-}" == ubuntu ]] || { echo "This script is for Ubuntu; found ${PRETTY_NAME:-unknown}" >&2; exit 1; }
 id "$DEPLOY_USER" >/dev/null 2>&1 || { echo "No user $DEPLOY_USER" >&2; exit 1; }
 
-echo "==> Installing Docker"
 export DEBIAN_FRONTEND=noninteractive
 apt-get update -q
-apt-get install -y -q docker.io docker-compose-v2 iptables-persistent
+
+echo "==> Firewall"
+# Oracle's Ubuntu images end the INPUT chain with a REJECT rule that blocks
+# everything but SSH, on top of the cloud security list. Accept HTTP, HTTPS
+# and HTTP/3 ahead of it and save the rules. Done before Docker is installed,
+# so the saved rules don't include Docker's own (it recreates them on start).
+# Other images (Azure, most clouds) don't filter here, so leave them alone.
+if iptables -S INPUT | grep -q -- '-j REJECT'; then
+  apt-get install -y -q iptables-persistent
+  open_port() {
+    iptables -C INPUT -p "$1" --dport "$2" -m state --state NEW -j ACCEPT 2>/dev/null \
+      || iptables -I INPUT -p "$1" --dport "$2" -m state --state NEW -j ACCEPT
+  }
+  open_port tcp 80
+  open_port tcp 443
+  open_port udp 443
+  netfilter-persistent save
+else
+  echo "No blocking iptables rule; nothing to open here"
+fi
+
+echo "==> Installing Docker"
+apt-get install -y -q docker.io docker-compose-v2
 systemctl enable --now docker
 # The deploy user runs `docker compose` over SSH. Docker access is
 # root-equivalent, so keep this user's SSH key safe.
@@ -43,18 +66,6 @@ fi
 # Use swap only under pressure, so judging timings stay in RAM
 echo 'vm.swappiness=10' > /etc/sysctl.d/99-codeleet.conf
 sysctl -q -p /etc/sysctl.d/99-codeleet.conf
-
-echo "==> Firewall"
-# Oracle's Ubuntu images reject everything except SSH in iptables, on top of
-# the cloud security list. Accept HTTP, HTTPS and HTTP/3 ahead of that rule.
-open_port() {
-  iptables -C INPUT -p "$1" --dport "$2" -m state --state NEW -j ACCEPT 2>/dev/null \
-    || iptables -I INPUT -p "$1" --dport "$2" -m state --state NEW -j ACCEPT
-}
-open_port tcp 80
-open_port tcp 443
-open_port udp 443
-netfilter-persistent save
 
 echo "==> Folders"
 # The worker container runs as node (uid 1000) and writes each job here;

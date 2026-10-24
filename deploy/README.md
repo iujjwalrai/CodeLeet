@@ -23,24 +23,31 @@ SHA to deploy. Any commit whose images were published works.
 
 ### 1. Cloud firewall
 
-In the cloud console (Oracle: Networking → Virtual cloud network → Security
-list), allow inbound TCP 80 and 443 and UDP 443 from `0.0.0.0/0`. SSH (22)
-must stay reachable from GitHub's runners, so use key-only login (the
-default on Oracle's images).
+In the cloud console, allow inbound TCP 80 and 443 and UDP 443 from
+`0.0.0.0/0`:
+
+- **Azure:** the VM → Networking → Network settings → add inbound port rules
+  (network security group).
+- **Oracle:** Networking → Virtual cloud network → Security list → ingress rules.
+
+SSH (22) must stay reachable from GitHub's runners, so use key-only login
+(the default on Azure and Oracle images).
 
 ### 2. Server
 
-From the repo, copy the setup script to the server and run it (Ubuntu):
+From the repo, copy the setup script to the server and run it (Ubuntu),
+passing the server's login user (`azureuser` on Azure, `ubuntu` on Oracle):
 
 ```sh
-scp deploy/setup-server.sh ubuntu@<server-ip>:
-ssh ubuntu@<server-ip> 'sudo bash setup-server.sh ubuntu'
+scp deploy/setup-server.sh <user>@<server-ip>:
+ssh <user>@<server-ip> 'sudo bash setup-server.sh <user>'
 ```
 
-It installs Docker, adds 2 GB of swap if there is none, opens ports 80/443
-in the server's own iptables (Oracle's images block them even when the
-security list allows them), and creates `/var/lib/codeleet/jobs` and
-`~/codeleet`. Log out and back in afterwards, so the docker group applies.
+It installs Docker, adds 2 GB of swap if there is none, and creates
+`/var/lib/codeleet/jobs` and `~/codeleet`. On Oracle images, which block
+ports 80/443 in the server's own iptables even when the security list
+allows them, it also opens those; elsewhere it leaves iptables alone. Log
+out and back in afterwards, so the docker group applies.
 
 ### 3. Settings
 
@@ -75,7 +82,7 @@ On your machine, make a key used only for deploys and allow it on the server:
 
 ```sh
 ssh-keygen -t ed25519 -f codeleet-deploy -N "" -C "github-deploy"
-ssh-copy-id -i codeleet-deploy.pub ubuntu@<server-ip>
+ssh-copy-id -i codeleet-deploy.pub <user>@<server-ip>
 ssh-keyscan <server-ip> > known_hosts.txt
 ```
 
@@ -94,7 +101,7 @@ Repo → Settings → Environments → New environment `production`:
   | Secret | Value |
   |---|---|
   | `DEPLOY_HOST` | the server's IP or hostname |
-  | `DEPLOY_USER` | `ubuntu` (or the user you set up) |
+  | `DEPLOY_USER` | the login user from step 2 (`azureuser`, `ubuntu`, ...) |
   | `DEPLOY_SSH_KEY` | the contents of `codeleet-deploy` (the private key) |
   | `DEPLOY_KNOWN_HOSTS` | the contents of `known_hosts.txt` |
 
