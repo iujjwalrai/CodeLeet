@@ -39,6 +39,11 @@ const createSubmission = async (req, res) => {
       code,
       language,
       problem : prob
+    }, {
+      // The verdict is saved on the submission, and each job carries the
+      // problem's tests (up to 2 MB), so finished jobs mustn't pile up in Redis
+      removeOnComplete: true,
+      removeOnFail: 100,
     });
 
     res.status(201).json({

@@ -31,8 +31,10 @@ describe('POST /api/submissions', () => {
     expect((await Problem.findById(problem._id)).stats.submissions).toBe(1);
 
     expect(queue.add).toHaveBeenCalledTimes(1);
-    const [jobName, jobData] = queue.add.mock.calls[0];
+    const [jobName, jobData, jobOptions] = queue.add.mock.calls[0];
     expect(jobName).toBe('run-submission');
+    // Finished jobs hold the problem's tests, so they mustn't stay in Redis
+    expect(jobOptions).toEqual({ removeOnComplete: true, removeOnFail: 100 });
     expect(jobData.submissionId.toString()).toBe(submission._id.toString());
     expect(jobData.problem.testCases).toHaveLength(2);
     expect(jobData.problem.codeTemplates.python.driver).toBe('solve()');
