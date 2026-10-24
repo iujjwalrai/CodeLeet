@@ -46,8 +46,16 @@ else
   echo "No blocking iptables rule; nothing to open here"
 fi
 
-echo "==> Installing Docker"
-apt-get install -y -q docker.io docker-compose-v2
+echo "==> Docker"
+if command -v docker >/dev/null && docker compose version >/dev/null 2>&1; then
+  echo "Already installed: $(docker --version)"
+elif apt-cache policy | grep -q download.docker.com; then
+  # Docker's own repository is set up; its containerd.io conflicts with
+  # Ubuntu's docker.io, so install Docker's packages
+  apt-get install -y -q docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+else
+  apt-get install -y -q docker.io docker-compose-v2
+fi
 systemctl enable --now docker
 # The deploy user runs `docker compose` over SSH. Docker access is
 # root-equivalent, so keep this user's SSH key safe.
