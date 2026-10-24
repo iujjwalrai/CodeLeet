@@ -1,0 +1,74 @@
+name: Deploy
+
+# Deploys published images to the production server over SSH.
+#
+# Called by ci.yml after publish.yml on a push to main, and can be run by
+# hand (Actions -> Deploy -> Run workflow) with a commit SHA to roll back or
+# redeploy; that commit's images must have been published.
+#
+# The job uses the "production" environment, so it waits until a required
+# reviewer approves it in GitHub. The environment holds the secrets:
+#   DEPLOY_HOST          server address
+#   DEPLOY_USER          SSH user (in the docker group)
+#   DEPLOY_SSH_KEY       private key for that user
+#   DEPLOY_KNOWN_HOSTS   output of `ssh-keyscan <host>`, so the server is verified
+# and optionally the variable DEPLOY_PATH (app folder on the server, relative
+# to the user's home; default codeleet).
+# See deploy/README.md.
+
+on:
+  workflow_call:
+  workflow_dispatch:
+    inputs:
+      sha:
+        description: Commit SHA to deploy (its images must be published)
+        required: true
+
+permissions:
+  contents: read
+
+# One deploy at a time; a newer one waits instead of interrupting
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Deploy to production
+    runs-on: ubuntu-latest
+    environment: production
+    env:
+      SHA: ${{ inputs.sha || github.sha }}
+      DEPLOY_PATH: ${{ vars.DEPLOY_PATH || 'codeleet' }}
+    steps:
+      - name: Check out the deployed commit
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.SHA }}
+
+      - name: Set up SSH
+        env:
+          SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
+          HOST: ${{ secrets.DEPLOY_HOST }}
+          USER_NAME: ${{ secrets.DEPLOY_USER }}
+        run: |
+          install -d -m 700 ~/.ssh
+          printf '%s\n' "$SSH_KEY" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          printf '%s\n' "$KNOWN_HOSTS" > ~/.ssh/known_hosts
+          printf 'Host server\n  HostName %s\n  User %s\n  IdentityFile ~/.ssh/deploy_key\n  StrictHostKeyChecking yes\n' \
+            "$HOST" "$USER_NAME" > ~/.ssh/config
+
+      - name: Copy the compose files and deploy scripts
+        # DEPLOY_PATH and SHA are meant to expand here, before ssh sends them
+        run: |
+          # shellcheck disable=SC2029
+          ssh server "mkdir -p '${DEPLOY_PATH}/deploy'"
+          scp docker-compose.yml docker-compose.prod.yml "server:${DEPLOY_PATH}/"
+          scp deploy/Caddyfile deploy/deploy.sh "server:${DEPLOY_PATH}/deploy/"
+
+      - name: Deploy
+        run: |
+          # shellcheck disable=SC2029
+          ssh server "bash '${DEPLOY_PATH}/deploy/deploy.sh' '${SHA::7}'"

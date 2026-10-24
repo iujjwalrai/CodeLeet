@@ -93,6 +93,12 @@ jobs:
       packages: write
     uses: ./.github/workflows/publish.yml
 
+  # Waits for approval in the "production" environment (see deploy.yml)
+  deploy:
+    needs: [publish]
+    uses: ./.github/workflows/deploy.yml
+    secrets: inherit
+
 
 
         
