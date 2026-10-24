@@ -99,6 +99,35 @@ describe('buildProblem', () => {
     await expect(build(roomy, slow)).resolves.toBeDefined();
   });
 
+  it('times the C++ reference when the package has complexity.json, and stores the profile', async () => {
+    const fake = fakeExecute();
+    const dir = writePackage(root, 'double-it', {
+      files: { 'complexity.json': JSON.stringify({ sizes: [4, 6, 8, 10], seeds: [1], expected: 'n' }) },
+    });
+
+    const { doc, summary } = await build(dir, fake);
+
+    expect(fake.calls.map((j) => j.prefix)).toEqual(['gen', 'gen', 'cpp', 'cx-gen', 'cx-run']);
+    expect(fake.calls[4].files['Solution.cpp']).toContain('class Solution');
+    expect(doc.analysisTools.complexity).toMatchObject({ sizes: [4, 6, 8, 10], expected: 'n' });
+    expect(summary.complexity).toBe('O(n)');
+  });
+
+  it('fails when the reference does not grow as complexity.json expects', async () => {
+    const fake = fakeExecute({ timeNs: (input) => Number(input) ** 2 / 10 });
+    const dir = writePackage(root, 'double-it', {
+      files: { 'complexity.json': JSON.stringify({ sizes: [1, 2, 5, 10], seeds: [1], expected: 'n' }) },
+    });
+    expect(await failure(build(dir, fake)))
+      .toMatch(/^double-it: complexity: the C\+\+ reference measures as O\(n²\), but complexity.json expects O\(n\) \(n=1: /);
+  });
+
+  it('leaves complexity out when the package has none', async () => {
+    const { doc, summary } = await build(writePackage(root, 'double-it'));
+    expect(doc.analysisTools.complexity).toBeUndefined();
+    expect(summary.complexity).toBeNull();
+  });
+
   it('fails when the tests take more than 2 MB', async () => {
     // A string answer: "x" for the example, 2 MB of x for the generated test
     const dir = writePackage(root, 'wordy', {

@@ -86,6 +86,8 @@ const submissionSchema = new mongoose.Schema(
       resources: resourcesSchema,
       // Only the public search result, never generator/reference source.
       counterexample: mongoose.Schema.Types.Mixed,
+      // Time complexity estimate after Accepted (problemkit/complexity.js)
+      complexity: mongoose.Schema.Types.Mixed,
     },
   },
   {

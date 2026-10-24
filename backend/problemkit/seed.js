@@ -42,8 +42,9 @@ async function seedProblems({ execute, only = [], dryRun = false, root, log = co
       const { doc, summary } = await buildProblem(pkg, { execute });
       built.push(doc);
       const java = summary.javaMs === null ? "" : `, Java ${summary.javaMs} ms`;
+      const complexity = summary.complexity ? `, ${summary.complexity}` : "";
       log(`  ok  ${pkg.slug}: ${summary.tests} tests (${summary.generated} generated), ` +
-        `${(summary.bytes / 1024).toFixed(0)} KB, limit ${pkg.meta.timeLimitMs} ms, reference C++ ${summary.cppMs} ms${java}`);
+        `${(summary.bytes / 1024).toFixed(0)} KB, limit ${pkg.meta.timeLimitMs} ms, reference C++ ${summary.cppMs} ms${java}${complexity}`);
     } catch (err) {
       if (!(err instanceof BuildError)) throw err;
       failures.push(err.message);

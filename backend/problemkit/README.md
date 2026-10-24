@@ -36,6 +36,7 @@ npm run seed:problems -- --dir ~/codeleet-problems
 | `reference.cpp` | A correct `class Solution`, written as a user would |
 | `reference.java` | Optional. Judged too when present |
 | `generator.cpp` | Prints one input for a size `n` and a `seed` |
+| `complexity.json` | Optional. Sizes to time after Accepted, and the expected complexity |
 | `cpp/driver.cpp`, `cpp/starter.cpp`, `java/Main.java`, `java/Starter.java` | Optional hand-written replacements for the generated code |
 
 ### problem.json
@@ -157,3 +158,47 @@ Analysis finishes as `found`, `not_found`, `skipped`, or `error`; none changes
 the verdict. Accepted and compilation errors do not trigger it. The frontend
 keeps the stream open while analysis is pending and displays its result
 separately. Complexity fitting / a low-priority queue remains Phase 4.
+
+## Time complexity (Phase 4)
+
+After an Accepted C++ or Java submission, problems with a `complexity.json`
+queue a job on `analysis-queue`. The `analysis-worker` service (one job at a
+time) generates inputs at growing sizes, times the solution, fits a
+complexity class and saves it at `analysis.complexity`. The verdict says
+`complexityPending: true`, and a `{type: "COMPLEXITY", ...}` event follows on
+the submission's channel. Judging never waits for it.
+
+```json
+{ "sizes": [6250, 12500, 25000, 50000, 100000], "seeds": [6], "expected": "n" }
+```
+
+| Key | |
+|---|---|
+| `sizes` | 4 to 8 increasing generator sizes, at most the largest generated test |
+| `seeds` | 1 or 2 seeds; each size is timed on each and the slowest counts |
+| `expected` | `1`, `log n`, `n`, `n log n`, `n^2`, `n^3` or `2^n` |
+| `measure` | `n` (default) or `n^2`: the problem size for a generator size, e.g. `n^2` cells for an n x n grid |
+| `variable` | How the size is written, default `n`, e.g. `m·n` |
+| `repeat` | Default 1. Calls per timing, for functions too fast to time once (binary search). Only for functions that don't change their input |
+
+Timing covers only the call to the solution, not reading input or starting
+the JVM. Each run takes many samples on fresh copies of the input and keeps
+the fastest, which also lets Java's JIT warm up; each input runs 3 times.
+The fit is `time = a·f(N) + b` for each class, by relative error. Of the
+classes within 25% of the best error, the slowest-growing is reported, since
+the constant term lets faster-growing classes fit flat timings too. `n` and
+`n log n`, and `1` and `log n`, are never reported as faster or slower than
+each other ("hard to tell apart"): cache misses make linear hashing look like
+`n log n` at these sizes. Results are inconclusive when fewer than 4 sizes
+finish, the largest takes under 0.01 ms, or the error is high. Inputs with
+lists or trees take at most 20 samples per run, since C++ never frees the
+nodes it reads.
+
+The seed times the C++ reference the same way and fails unless it fits
+`expected` (or is too close to call with it), so check a profile with
+`--dry-run --only <slug>`. Choose a seed whose input has the same shape at
+every size: a shape picked at random per size (a random density, a random
+target position) changes the work per element and bends the curve. Choose
+the worst case for the solutions you want to tell apart. Keep the largest
+sizes below a cache cliff (a jump in time per element), and give problems
+whose work depends on a random position (two-sum's pair) no profile.

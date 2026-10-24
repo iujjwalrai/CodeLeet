@@ -14,6 +14,7 @@ module.exports = {
     '^(\\.{1,2}/)+config/redispubsub$': '<rootDir>/tests/mocks/redispubsub.js',
     '^(\\.{1,2}/)+queue/runQueue$': '<rootDir>/tests/mocks/queue.js',
     '^(\\.{1,2}/)+queue/submissionQueue$': '<rootDir>/tests/mocks/queue.js',
+    '^(\\.{1,2}/)+queue/analysisQueue$': '<rootDir>/tests/mocks/queue.js',
   },
   clearMocks: true,
   collectCoverageFrom: [

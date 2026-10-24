@@ -140,11 +140,13 @@ const javaPrefix = () =>
     runtime("CodeleetIO.java"),
   ].join("\n");
 
-// Prints the output collected by `body` (which fills StringBuilder out)
-const javaMain = (reads, body) => [
+// Prints the output collected by `body` (which fills StringBuilder out);
+// `after` runs once the solution has finished without an exception
+const javaMain = (reads, body, after = []) => [
   "public class Main {",
   "    public static void main(String[] args) throws Exception {",
-  "        CodeleetIO in = new CodeleetIO(System.in.readAllBytes());",
+  "        final byte[] cl_input = System.in.readAllBytes();",
+  "        CodeleetIO in = new CodeleetIO(cl_input);",
   ...reads,
   "        StringBuilder out = new StringBuilder();",
   "        Throwable[] error = new Throwable[1];",
@@ -159,6 +161,7 @@ const javaMain = (reads, body) => [
   "            error[0].printStackTrace();",
   "            System.exit(1);",
   "        }",
+  ...after,
   "        out.append('\\n');",
   "        System.out.write(out.toString().getBytes(StandardCharsets.UTF_8));",
   "        System.out.flush();",
@@ -171,6 +174,109 @@ function javaDriver(sig) {
   const reads = sig.params.map((p, i) => `        final ${TYPES[p.type].java} ${arg(i)} = in.read${TYPES[p.type].io}();`);
   const call = `new Solution().${sig.name}(${sig.params.map((_, i) => arg(i)).join(", ")})`;
   return [javaPrefix(), ...javaMain(reads, [`            CodeleetIO.write${javaIo(sig.returns)}(out, ${call});`])].join("\n");
+}
+
+/*
+ * Drivers for complexity analysis (complexity.js). They time only the call
+ * to the solution and print "<marker> <ns> <calls>" on a line of stderr;
+ * the marker is the program's first argument.
+ *
+ * Each run takes up to SAMPLES samples (NODE_SAMPLES for lists and trees),
+ * each on a freshly parsed copy of the input, and reports the fastest time
+ * per call. The first samples warm
+ * up Java's JIT and the minimum skips GC pauses. Within a sample the call
+ * is repeated on the same arguments up to `repeat` times (complexity.json),
+ * for functions too fast to time once. The result is printed once and kept
+ * live, so the calls can't be optimised away.
+ */
+const SAMPLES = 200;
+// C++ never frees the nodes it reads (the solution may keep or relink
+// them), so inputs with lists or trees take fewer samples
+const NODE_SAMPLES = 20;
+const samplesFor = (sig) => (sig.params.some((p) => p.type === "ListNode" || p.type === "TreeNode") ? NODE_SAMPLES : SAMPLES);
+const TIMED_BUDGET_NS = 50000000;  // stop sampling after this much timed work
+const WALL_BUDGET_NS = 400000000;  // or this long in total, parsing included
+const REPEAT_BUDGET_NS = 20000000; // stop repeating within a sample after this
+// The clock is read only when the call count reaches a power of two, so
+// timing very fast calls doesn't measure the clock instead
+const isPowerOfTwo = (v) => `(${v} & (${v} - 1)) == 0`;
+
+function cppTimedDriver(sig, repeat = 1) {
+  const args = sig.params.map((_, i) => arg(i)).join(", ");
+  const since = (t) => `(long long)std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now() - ${t}).count()`;
+  return [
+    cppPrefix(),
+    '#include "Solution.cpp"',
+    "",
+    "signed main(int cl_argc, char** cl_argv) {",
+    "    cl_io::Reader cl_source;",
+    "    auto cl_wall = std::chrono::steady_clock::now();",
+    "    long long cl_best_ns = -1, cl_best_calls = 1, cl_timed = 0;",
+    `    for (int cl_sample = 0; cl_sample < ${samplesFor(sig)} && cl_timed < ${TIMED_BUDGET_NS}LL && ${since("cl_wall")} < ${WALL_BUDGET_NS}LL; cl_sample++) {`,
+    "        cl_io::Reader in = cl_source;",
+    ...sig.params.map((p, i) => `        auto ${arg(i)} = in.read${TYPES[p.type].io}();`),
+    "        Solution solution;",
+    "        auto cl_t0 = std::chrono::steady_clock::now();",
+    `        auto result = solution.${sig.name}(${args});`,
+    "        long long cl_calls = 1;",
+    ...(repeat > 1 ? [
+      `        while (cl_calls < ${repeat}) {`,
+      // Barriers, so the compiler can't hoist or drop the repeated calls
+      '            asm volatile("" ::: "memory");',
+      `            auto cl_again = solution.${sig.name}(${args});`,
+      '            asm volatile("" : : "g"(&cl_again) : "memory");',
+      "            cl_calls++;",
+      `            if (${isPowerOfTwo("cl_calls")} && ${since("cl_t0")} > ${REPEAT_BUDGET_NS}LL) break;`,
+      "        }",
+    ] : []),
+    `        long long cl_ns = ${since("cl_t0")};`,
+    '        asm volatile("" : : "g"(&result) : "memory");',
+    "        cl_timed += cl_ns;",
+    "        if (cl_best_ns < 0 || cl_ns * cl_best_calls < cl_best_ns * cl_calls) { cl_best_ns = cl_ns; cl_best_calls = cl_calls; }",
+    "        if (cl_sample == 0) {",
+    "            cl_io::Writer out;",
+    `            out.write${TYPES[sig.returns].io}(result);`,
+    "            out.flush();",
+    "        }",
+    "    }",
+    '    fprintf(stderr, "\\n%s %lld %lld\\n", cl_argc > 1 ? cl_argv[1] : "", cl_best_ns, cl_best_calls);',
+    "}",
+    "",
+  ].join("\n");
+}
+
+function javaTimedDriver(sig, repeat = 1) {
+  const call = `cl_solution.${sig.name}(${sig.params.map((_, i) => arg(i)).join(", ")})`;
+  const reads = [
+    // Best time and its call count, filled in by the solver thread
+    "        final long[] cl_best = { -1, 1 };",
+    "        final Object[] cl_sink = new Object[1];",
+  ];
+  const body = [
+    "            long cl_wall = System.nanoTime(), cl_timed = 0;",
+    `            for (int cl_sample = 0; cl_sample < ${samplesFor(sig)} && cl_timed < ${TIMED_BUDGET_NS}L && System.nanoTime() - cl_wall < ${WALL_BUDGET_NS}L; cl_sample++) {`,
+    "                CodeleetIO cl_in = new CodeleetIO(cl_input);",
+    ...sig.params.map((p, i) => `                final ${TYPES[p.type].java} ${arg(i)} = cl_in.read${TYPES[p.type].io}();`),
+    "                Solution cl_solution = new Solution();",
+    "                long cl_t0 = System.nanoTime();",
+    `                ${TYPES[sig.returns].java} cl_result = ${call};`,
+    "                long cl_calls = 1;",
+    ...(repeat > 1 ? [
+      `                while (cl_calls < ${repeat}) {`,
+      `                    cl_sink[0] = ${call};`,
+      "                    cl_calls++;",
+      `                    if (${isPowerOfTwo("cl_calls")} && System.nanoTime() - cl_t0 > ${REPEAT_BUDGET_NS}L) break;`,
+      "                }",
+    ] : []),
+    "                long cl_ns = System.nanoTime() - cl_t0;",
+    "                cl_timed += cl_ns;",
+    "                if (cl_best[0] < 0 || cl_ns * cl_best[1] < cl_best[0] * cl_calls) { cl_best[0] = cl_ns; cl_best[1] = cl_calls; }",
+    `                if (cl_sample == 0) CodeleetIO.write${javaIo(sig.returns)}(out, cl_result);`,
+    "                else cl_sink[0] = cl_result;",
+    "            }",
+  ];
+  const after = ['        System.err.print("\\n" + (args.length > 0 ? args[0] : "") + " " + cl_best[0] + " " + cl_best[1] + "\\n");'];
+  return [javaPrefix(), ...javaMain(reads, body, after)].join("\n");
 }
 
 /*
@@ -206,4 +312,6 @@ function javaEchoDriver(types) {
 /* A generator's full source: the gen.hpp helpers, then the problem's code */
 const generatorSource = (code) => `${runtime("gen.hpp")}${code}`;
 
-module.exports = { cppStarter, javaStarter, cppDriver, javaDriver, cppEchoDriver, javaEchoDriver, generatorSource };
+module.exports = {
+  cppStarter, javaStarter, cppDriver, javaDriver, cppTimedDriver, javaTimedDriver, cppEchoDriver, javaEchoDriver, generatorSource,
+};

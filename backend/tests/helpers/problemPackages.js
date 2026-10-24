@@ -45,20 +45,28 @@ const ok = (stdout, extra = {}) => ({
 
 /*
  * Fake docker/judge.js execute. Generator jobs print "n*1000+seed" as the
- * input; reference jobs answer `solve(input)` (twice x by default); the
- * runtime self-test echo jobs print the expected samples. `tweak(job, tests)`
- * can change the report before it is returned.
+ * input; reference jobs answer `solve(input)` (twice x by default); timed
+ * complexity runs report `timeNs(input)` after the job's marker (linear in
+ * n by default); the runtime self-test echo jobs print the expected
+ * samples. `tweak(job, tests)` can change the report before it is returned.
  */
-function fakeExecute({ solve = (input) => String(2 * Number(input)), tweak = (_job, tests) => tests } = {}) {
+function fakeExecute({
+  solve = (input) => String(2 * Number(input)),
+  timeNs = (input) => 100 * Number(input),
+  tweak = (_job, tests) => tests,
+} = {}) {
   const calls = [];
   const execute = jest.fn(async (job) => {
     calls.push(job);
     let tests;
-    if (job.prefix === 'gen') {
+    if (job.prefix === 'gen' || job.prefix === 'cx-gen') {
       tests = job.inputs.map((input) => {
         const [n, seed] = input.trim().split(' ').map(Number);
         return ok(`${n * 1000 + seed}\n`);
       });
+    } else if (job.prefix === 'cx-run') {
+      const marker = job.run.split(' ').at(-1);
+      tests = job.inputs.map((input) => ok(`${solve(input)}\n`, { stderr: `\n${marker} ${timeNs(input)} 1\n` }));
     } else if (Object.values(job.files).includes('')) {
       const echoed = SAMPLES.map(([, text, out = text]) => out).join('\n');
       tests = [ok(`${echoed}\n`)];

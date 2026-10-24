@@ -12,7 +12,7 @@ x-backend-env: &backend-env
   GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-not-configured}
   FRONTEND_URL: ${FRONTEND_URL:-http://localhost:8080}
 
-# Everything both worker pools share
+# Everything the worker pools share
 x-worker: &worker
   build:
     context: ./backend
@@ -93,6 +93,11 @@ services:
   run-worker:
     <<: *worker
     command: ["node", "worker/runWorker.js"]
+
+  # Complexity analysis after Accepted, one job at a time
+  analysis-worker:
+    <<: *worker
+    command: ["node", "worker/analysisWorker.js"]
 
   gateway:
     build: ./client

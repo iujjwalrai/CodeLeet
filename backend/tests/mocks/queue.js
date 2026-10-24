@@ -1,5 +1,5 @@
-// Stand-in for the BullMQ queues. Both runQueue and submissionQueue map to
-// this module, so tests can assert on queue.add calls.
+// Stand-in for the BullMQ queues. runQueue, submissionQueue and
+// analysisQueue all map to this module, so tests can assert on queue.add calls.
 let nextId = 1;
 
 module.exports = {
