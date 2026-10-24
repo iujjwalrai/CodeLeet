@@ -144,6 +144,11 @@ services:
     image: ${REGISTRY:-ghcr.io/iujjwalrai}/codeleet-java:${TAG:-latest}
     build: !reset null
 
+networks:
+  # Internal locally; the workers here need the internet for MongoDB Atlas
+  core:
+    internal: false
+
 volumes:
   caddy-data:
   caddy-config:

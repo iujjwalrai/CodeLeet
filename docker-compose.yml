@@ -36,6 +36,10 @@ x-worker: &worker
   init: true
   # Longer than the workers' 30s shutdown timeout
   stop_grace_period: 35s
+  # The worker only orchestrates; sandboxes get their own limits (judge.js)
+  deploy:
+    resources:
+      limits: { cpus: "0.5", memory: 256M }
   depends_on:
     mongo:
       condition: service_healthy
@@ -56,6 +60,10 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+    # Local only (production uses Atlas); MongoDB sizes its cache to the limit
+    deploy:
+      resources:
+        limits: { cpus: "1.0", memory: 1G }
     networks: [core]
     restart: unless-stopped
 
@@ -70,6 +78,9 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+    deploy:
+      resources:
+        limits: { cpus: "0.5", memory: 256M }
     networks: [core]
     restart: unless-stopped
 
@@ -87,6 +98,10 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+    deploy:
+      resources:
+        limits: { cpus: "0.5", memory: 512M }
+    # edge isn't internal, so the API can still reach Google for sign-in
     networks: [edge, core]
     restart: unless-stopped
 
@@ -112,6 +127,9 @@ services:
       # nginx won't start until the "api" hostname resolves
       api:
         condition: service_healthy
+    deploy:
+      resources:
+        limits: { cpus: "0.25", memory: 128M }
     networks: [edge]
     restart: unless-stopped
 
@@ -144,7 +162,12 @@ services:
 
 networks:
   edge: {}   # gateway <-> api
-  core: {}   # api/workers <-> mongo/redis
+  # api/workers <-> mongo/redis. Internal: nothing on it can reach the
+  # internet or be reached from outside. Sandboxes start on the host daemon
+  # through the socket, with --network none, so they don't need it.
+  # docker-compose.prod.yml opens it, since workers there reach MongoDB Atlas.
+  core:
+    internal: true
 
 volumes:
   mongo-data:
