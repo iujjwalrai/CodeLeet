@@ -1,0 +1,53 @@
+/* ── time complexity (ComplexityFit.jsx); builds on ResourceTimeline.css ── */
+.cx-plot {
+    height: 140px
+}
+
+.cx-yaxis {
+    width: 52px
+}
+
+.cx-xaxis {
+    padding-left: 52px;
+    margin-top: 2px
+}
+
+/* The expected class is a reference, so neutral and dashed */
+.cx-expected {
+    fill: none;
+    stroke: var(--dim);
+    stroke-width: 1.5;
+    stroke-dasharray: 4 3
+}
+
+.cx-dot {
+    transition: transform 120ms
+}
+
+.cx-dot-hover {
+    transform: scale(1.4)
+}
+
+.cx-legend {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px 16px;
+    font-size: 11px;
+    color: var(--dim)
+}
+
+.cx-legend span {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px
+}
+
+.cx-key {
+    width: 16px;
+    height: 0;
+    border-top: 2px solid var(--accent)
+}
+
+.cx-key-expected {
+    border-top: 2px dashed var(--dim)
+}

@@ -72,6 +72,28 @@ describe('codegen', () => {
     expect(driver).toMatch(/^\/\/ Generated[^\n]*\nimport /);
   });
 
+  it('builds timing drivers that report only the solution call after a marker', () => {
+    const cpp = codegen.cppTimedDriver(maxSub);
+    expect(cpp).toContain('signed main(int cl_argc, char** cl_argv) {');
+    expect(cpp).toContain('        cl_io::Reader in = cl_source;');
+    expect(cpp).toContain('        auto result = solution.maxSubArray(cl_arg0, cl_arg1);');
+    expect(cpp).toContain('cl_argc > 1 ? cl_argv[1] : "", cl_best_ns, cl_best_calls);');
+    expect(cpp).not.toContain('cl_again');
+
+    const java = codegen.javaTimedDriver(levels, 50);
+    expect(java).toContain('                CodeleetIO cl_in = new CodeleetIO(cl_input);');
+    expect(java).toContain('                List<List<Integer>> cl_result = cl_solution.levelOrder(cl_arg0);');
+    expect(java).toContain('                while (cl_calls < 50) {');
+    expect(java).toContain('(args.length > 0 ? args[0] : "") + " " + cl_best[0] + " " + cl_best[1]');
+  });
+
+  it('repeats fast calls behind compiler barriers when asked', () => {
+    const cpp = codegen.cppTimedDriver(maxSub, 1000);
+    expect(cpp).toContain('        while (cl_calls < 1000) {');
+    expect(cpp).toContain('            auto cl_again = solution.maxSubArray(cl_arg0, cl_arg1);');
+    expect(cpp).toContain('asm volatile("" : : "g"(&cl_again) : "memory");');
+  });
+
   it('prefixes generators with the gen.hpp helpers', () => {
     const src = codegen.generatorSource('void generate(long long n, Rng& rng) {}');
     expect(src).toContain('struct Rng');
@@ -151,6 +173,25 @@ describe('loadPackage', () => {
       'tests.json: tests[1] has gen, so it can\'t also have args or output',
       'tests.json: tests[2].hidden must be true or false',
     ]));
+  });
+
+  it('loads complexity.json when there is one', () => {
+    expect(loadPackage(writePackage(root, 'plain')).complexity).toBeNull();
+    const pkg = loadPackage(writePackage(root, 'timed', {
+      tests: { tests: [{ gen: [100, 1] }] },
+      files: { 'complexity.json': JSON.stringify({ sizes: [10, 20, 50, 100], seeds: [1], expected: 'n' }) },
+    }));
+    expect(pkg.complexity).toEqual({ sizes: [10, 20, 50, 100], seeds: [1], expected: 'n', measure: 'n', variable: 'n', repeat: 1 });
+  });
+
+  it('reports a bad complexity.json with the other problems', () => {
+    const problems = errorsOf(writePackage(root, 'timed', {
+      files: { 'complexity.json': JSON.stringify({ sizes: [1, 2, 3, 400], seeds: [1], expected: 'n' }), 'cpp/driver.cpp': '// mine' },
+    }));
+    expect(problems).toEqual([
+      "complexity.json: can't be used with a hand-written driver",
+      'complexity.json: sizes must not exceed the largest generated test (n=10)',
+    ]);
   });
 
   it('checks the signature before the cases that depend on it', () => {

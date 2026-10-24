@@ -12,6 +12,8 @@ const runCpp = require("../docker/runCpp");
 const cache = require("../config/redis");
 const gracefulShutdown = require("../utils/gracefulShutdown");
 const { canAnalyze, analyzeFailure } = require("./counterexampleAnalysis");
+const { canMeasure } = require("../problemkit/complexity");
+const analysisQueue = require("../queue/analysisQueue");
 
 // Statuses the Submission model can store; anything else (e.g. "error") is
 // only published, as before.
@@ -27,7 +29,7 @@ const FINAL_STATUSES = new Set([
 async function publishJobUpdate(jobId, data) {
   const payload = JSON.stringify({ jobId, data });
   const channel = `job-updates-submission:${jobId}`;
-  await cache.set(`job-cache:${channel}`, payload, "EX", data.analysisPending ? 180 : 60);
+  await cache.set(`job-cache:${channel}`, payload, "EX", data.analysisPending || data.complexityPending ? 180 : 60);
   await connectionPubSub.publish(channel, payload);
 }
 
@@ -51,6 +53,20 @@ async function saveVerdict(submissionId, result) {
       "analysis.resources": result.resources || undefined,
     }
   );
+}
+
+// Complexity analysis runs later on its own queue (worker/analysisWorker.js),
+// so judging never waits for it. Returns whether the job was queued.
+async function queueComplexity(submissionId, jobId) {
+  try {
+    await analysisQueue.add("complexity", { submissionId: String(submissionId), jobId: String(jobId) }, {
+      jobId: `complexity-${submissionId}`, removeOnComplete: true, removeOnFail: 100,
+    });
+    return true;
+  } catch (err) {
+    console.error("Unable to queue complexity analysis:", err.message);
+    return false;
+  }
 }
 
 async function processSubmission(job) {
@@ -131,11 +147,13 @@ async function processSubmission(job) {
       await saveVerdict(submissionId, result);
 
       const analysisPending = canAnalyze(problem, language, result);
+      const complexityPending = canMeasure(problem, language, result) && await queueComplexity(submissionId, job.id);
       await publishJobUpdate(job.id, {
         type: "SUBMIT",
         submissionId,
         status: result.status,
         analysisPending,
+        complexityPending,
         passedCount: result.passedCount,
         totalCount: result.totalCount,
         failedTestCase: result.failedTestCase,

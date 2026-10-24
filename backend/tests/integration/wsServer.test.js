@@ -109,6 +109,18 @@ describe('WebSocket job updates', () => {
     await close(ws);
   });
 
+  it('replays a COMPLEXITY event that finished after the verdict', async () => {
+    const verdict = { jobId: '22', data: { type: 'SUBMIT', status: 'accepted', complexityPending: true } };
+    const complexity = { jobId: '22', data: { type: 'COMPLEXITY', status: 'done', label: 'O(n)' } };
+    cache.get.mockResolvedValueOnce(JSON.stringify(verdict)).mockResolvedValueOnce(null).mockResolvedValueOnce(JSON.stringify(complexity));
+    const { ws, messages } = await openClient();
+    ws.send(JSON.stringify({ type: 'SUBMIT', jobId: '22' }));
+    await waitFor(() => messages.length === 2);
+    expect(messages).toEqual([verdict, complexity]);
+    expect(cache.get).toHaveBeenLastCalledWith('job-cache:job-updates-submission:22:complexity');
+    await close(ws);
+  });
+
   it('keeps RUN and SUBMIT analysis separate even when queue IDs overlap', async () => {
     const a = await openClient(), b = await openClient();
     a.ws.send(JSON.stringify({ type: 'RUN', jobId: '20' }));

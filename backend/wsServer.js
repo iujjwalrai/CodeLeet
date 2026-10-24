@@ -21,8 +21,11 @@ async function subscribe(jobId, ws, channel) {
   if (cached && ws.readyState === WebSocket.OPEN) {
     ws.send(cached);
   }
-  const analysis = await cache.get(`job-cache:${channel}:analysis`);
-  if (analysis && ws.readyState === WebSocket.OPEN) ws.send(analysis);
+  // Then any analysis that finished after the verdict (ANALYSIS, COMPLEXITY)
+  for (const kind of ["analysis", "complexity"]) {
+    const event = await cache.get(`job-cache:${channel}:${kind}`);
+    if (event && ws.readyState === WebSocket.OPEN) ws.send(event);
+  }
 }
 
 

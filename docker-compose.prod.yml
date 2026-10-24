@@ -92,6 +92,15 @@ services:
       resources:
         limits: { cpus: "0.5", memory: 256M }
 
+  # Complexity analysis after Accepted; one job at a time per replica
+  analysis-worker:
+    <<: *prod-worker
+    command: ["node", "worker/analysisWorker.js"]
+    deploy:
+      replicas: ${ANALYSIS_WORKER_REPLICAS:-1}
+      resources:
+        limits: { cpus: "0.5", memory: 256M }
+
   gateway:
     image: ${REGISTRY:-ghcr.io/iujjwalrai}/codeleet-gateway:${TAG:-latest}
     build: !reset null

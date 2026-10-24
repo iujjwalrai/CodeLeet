@@ -12,6 +12,7 @@ import LogoutButton from "../components/Logout";
 import { Logo, ThemeToggle } from "../components/Navbar";
 import ResourceTimeline from "../components/ResourceTimeline";
 import Counterexample from "../components/Counterexample";
+import ComplexityFit from "../components/ComplexityFit";
 import { useAuth } from "../context/AuthContext";
 import { useTheme } from "../theme";
 import toast from "react-hot-toast";
@@ -288,6 +289,8 @@ const ProblemPage = ({ problemId = "1" }) => {
         onError: () => { setSubmitData(null); toast.error('Lost connection to the judge.'); },
         onAnalysis: data => setSubmitData(current => current?.submissionId === liveSubmissionId
           ? { ...current, counterexample: data, analysisPending: false } : current),
+        onComplexity: data => setSubmitData(current => current?.submissionId === liveSubmissionId
+          ? { ...current, complexity: data, complexityPending: false } : current),
         onVerdict: data => {
         liveSubmissionId = data.submissionId;
         setSubmitData(data);
@@ -473,6 +476,7 @@ const ProblemPage = ({ problemId = "1" }) => {
 
               <ResourceTimeline resources={submitData.resources ?? submitData.analysis?.resources} />
               <Counterexample analysis={submitData.counterexample ?? submitData.analysis?.counterexample} pending={submitData.analysisPending} />
+              <ComplexityFit analysis={submitData.complexity ?? submitData.analysis?.complexity} pending={submitData.complexityPending} />
             </div>
           )}
         </>}

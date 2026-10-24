@@ -2,6 +2,8 @@ jest.mock('../../docker/runPython', () => jest.fn());
 jest.mock('../../docker/runCpp', () => jest.fn());
 
 const runPython = require('../../docker/runPython');
+const runCpp = require('../../docker/runCpp');
+const analysisQueue = require('../../queue/analysisQueue');
 const pubsub = require('../../config/redispubsub');
 const cache = require('../../config/redis');
 const Submission = require('../../models/Submission');
@@ -136,6 +138,52 @@ describe('processSubmission', () => {
     }
 
     expect(order).toEqual(['publish:Running', 'save', 'publish:accepted']);
+  });
+
+  describe('complexity analysis', () => {
+    const tools = { signature: { params: [{ type: 'int' }] }, generator: 'g', reference: 'r', complexity: { sizes: [1, 2, 3, 4] } };
+    const timedJob = async (status, language = 'cpp') => {
+      (language === 'cpp' ? runCpp : runPython).mockResolvedValue({ status, output: 'ok', time: 1, failedTestCaseIndex: 0 });
+      const { job, submission } = await jobFor({ language });
+      job.data.problem.analysisTools = tools;
+      return { job, submission };
+    };
+
+    it('queues Accepted C++ and Java submissions and says so in the verdict', async () => {
+      const { job, submission } = await timedJob('accepted');
+
+      await processSubmission(job);
+
+      expect(analysisQueue.add).toHaveBeenCalledWith(
+        'complexity', { submissionId: String(submission._id), jobId: '21' },
+        expect.objectContaining({ jobId: `complexity-${submission._id}` }),
+      );
+      expect(published().at(-1).data).toMatchObject({ status: 'accepted', complexityPending: true });
+      expect(cache.set).toHaveBeenLastCalledWith('job-cache:job-updates-submission:21', expect.any(String), 'EX', 180);
+    });
+
+    it('queues nothing for other verdicts, languages or problems without a profile', async () => {
+      for (const [status, language] of [['wrong_answer', 'cpp'], ['accepted', 'python']]) {
+        const { job } = await timedJob(status, language);
+        await processSubmission(job);
+      }
+      runCpp.mockResolvedValue({ status: 'accepted', output: 'ok', time: 1 });
+      const { job } = await jobFor({ language: 'cpp' });
+      await processSubmission(job);
+
+      expect(analysisQueue.add).not.toHaveBeenCalled();
+      expect(published().filter((u) => u.data.status !== 'Running').every((u) => u.data.complexityPending === false)).toBe(true);
+    });
+
+    it('still publishes the verdict when the analysis queue is down', async () => {
+      analysisQueue.add.mockRejectedValueOnce(new Error('redis down'));
+      const { job } = await timedJob('accepted');
+
+      const result = await processSubmission(job);
+
+      expect(result.status).toBe('accepted');
+      expect(published().at(-1).data).toMatchObject({ status: 'accepted', complexityPending: false });
+    });
   });
 
   it('publishes an error and leaves the submission alone for unsupported languages', async () => {

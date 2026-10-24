@@ -2,6 +2,7 @@ const fs = require("fs");
 const path = require("path");
 const { TYPES, encode, checkValue } = require("./types");
 const codegen = require("./codegen");
+const { checkProfile } = require("./complexity");
 
 /*
  * A problem package is a folder named after its slug, in backend/problems/
@@ -16,6 +17,7 @@ const codegen = require("./codegen");
  *   reference.cpp    a correct Solution, written as a user would
  *   reference.java   optional; also judged when present
  *   generator.cpp    void generate(long long n, Rng& rng), see runtime/gen.hpp
+ *   complexity.json  optional; sizes to time after Accepted, see complexity.js
  *
  * Optional hand-written replacements for the generated code:
  *   cpp/driver.cpp, cpp/starter.cpp, java/Main.java, java/Starter.java
@@ -166,9 +168,21 @@ function loadPackage(dir) {
     });
   }
 
+  const override = (file) => readText(dir, file, [], { required: false });
+  let complexity = null;
+  if (fs.existsSync(path.join(dir, "complexity.json"))) {
+    const raw = readJson(dir, "complexity.json", errors);
+    if (raw) {
+      const gens = tests.filter((t) => t.gen).map((t) => t.gen[0]);
+      const customDriver = override("cpp/driver.cpp") !== null || override("java/Main.java") !== null;
+      const checked = checkProfile(raw, { maxN: gens.length ? Math.max(...gens) : null, customDriver });
+      errors.push(...checked.errors);
+      complexity = checked.profile;
+    }
+  }
+
   if (errors.length) throw new PackageError(slug, errors);
 
-  const override = (file) => readText(dir, file, [], { required: false });
   const examples = problem.examples.map((ex) => ({
     input: displayInput(ex.args, fn),
     output: encode(ex.output),
@@ -195,6 +209,7 @@ function loadPackage(dir) {
     ],
     reference,
     generator,
+    complexity,
     templates: {
       cpp: {
         starter: override("cpp/starter.cpp") ?? codegen.cppStarter(fn),

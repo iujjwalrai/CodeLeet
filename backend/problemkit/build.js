@@ -3,6 +3,7 @@ const { javaJob } = require("../docker/runJava");
 const { checkGeneratedLine } = require("./types");
 const { generatorSource } = require("./codegen");
 const { buildAnalysisTools } = require("./counterexample");
+const { measure, summarize, label, ComplexityError } = require("./complexity");
 
 /*
  * Turns a loaded package (package.js) into a Problem document: generates the
@@ -97,6 +98,36 @@ async function runReference(pkg, language, job, tests, execute) {
   return { outputs, slowest: Math.round(slowest) };
 }
 
+/*
+ * Times the C++ reference as an Accepted submission would be timed and
+ * checks it has the class complexity.json expects, so the profile's sizes
+ * really show that trend. "Too close to call" with the expected class passes.
+ */
+async function checkComplexity(pkg, execute) {
+  const profile = pkg.complexity;
+  let points;
+  try {
+    points = await measure({
+      profile, signature: pkg.signature, generator: pkg.generator,
+      timeLimitMs: pkg.meta.timeLimitMs, language: "cpp", code: pkg.reference.cpp,
+    }, { execute });
+  } catch (err) {
+    if (err instanceof ComplexityError) throw new BuildError(pkg.slug, `complexity: ${err.message}`);
+    throw err;
+  }
+  const result = summarize(points, profile);
+  const timings = points.map((p) => `n=${p.n}: ${p.ms} ms`).join(", ");
+  if (result.status !== "done") {
+    throw new BuildError(pkg.slug, `complexity: ${result.reason} (${timings})`);
+  }
+  if (!["matches", "close"].includes(result.verdict)) {
+    throw new BuildError(pkg.slug, `complexity: the C++ reference measures as ${result.label}, ` +
+      `but complexity.json expects ${label(profile.expected, profile.variable)} (${timings})`);
+  }
+  // "close": the best fit was another class too near the expected one to call
+  return result.verdict === "close" ? `${result.expectedLabel} (close to ${result.label})` : result.label;
+}
+
 async function buildProblem(pkg, { execute }) {
   const tests = pkg.tests.map((t) => ({ ...t }));
 
@@ -120,14 +151,18 @@ async function buildProblem(pkg, { execute }) {
     throw new BuildError(pkg.slug, `tests take ${(bytes / 1048576).toFixed(2)} MB; the limit is ${MAX_TEST_BYTES / 1048576} MB`);
   }
 
+  const complexity = pkg.complexity ? await checkComplexity(pkg, execute) : null;
+
+  const analysisTools = { ...buildAnalysisTools(pkg), ...(pkg.complexity ? { complexity: pkg.complexity } : {}) };
   return {
-    doc: { ...pkg.meta, testCases, codeTemplates: pkg.templates, analysisTools: buildAnalysisTools(pkg) },
+    doc: { ...pkg.meta, testCases, codeTemplates: pkg.templates, analysisTools },
     summary: {
       tests: testCases.length,
       generated: gens.length,
       cppMs: cpp.slowest,
       javaMs: java ? java.slowest : null,
       bytes,
+      complexity,
     },
   };
 }
