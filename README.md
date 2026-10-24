@@ -159,6 +159,28 @@ Your platform should now be accessible at `http://localhost:5173`.
 
 ---
 
+## 📈 Scaling and Deploys
+
+With Docker Compose, every service scales by running more containers:
+
+```bash
+docker compose up -d --scale api=3 --scale submission-worker=2
+```
+
+- **API:** the gateway (`client/nginx.conf`) re-resolves `api` every 10 seconds and sends each request to the replica with the fewest active connections. A WebSocket can land on any replica, since verdicts reach it through Redis pub/sub. `GET /api/health` names the replica that answered; `GET /api/ready` returns 503 until that replica reaches MongoDB and Redis, and the container healthcheck uses it.
+- **Judging:** `WORKER_CONCURRENCY` (default 1) is how many jobs each submission or run worker handles at once. Every job starts a sandbox limited to one CPU, so keep (submission + run workers) × `WORKER_CONCURRENCY`, plus the analysis worker, within the machine's cores. Past that, runs slow down and correct solutions start hitting the time limit.
+- **Analysis:** keep one `analysis-worker`, so complexity timings don't compete with each other.
+
+In production, set `API_REPLICAS`, `SUBMISSION_WORKER_REPLICAS`, `RUN_WORKER_REPLICAS`, `WORKER_CONCURRENCY` and `ANALYSIS_WORKER_REPLICAS` in `.env` (see `.env.prod.example`).
+
+**Deploys without downtime:** `docker compose up -d` recreates containers, so the API is briefly unavailable; queued jobs are kept in Redis and workers finish their current job before stopping. To avoid the gap, the [`docker rollout`](https://github.com/wowu/docker-rollout) plugin starts a new API container, waits for it to pass `/api/ready`, then stops the old one:
+
+```bash
+docker rollout -f docker-compose.yml -f docker-compose.prod.yml api
+```
+
+---
+
 ## 🔐 Security Details
 
 CodeLeet takes code execution security seriously. When a user submits code, the worker spawns a container with the following flags:

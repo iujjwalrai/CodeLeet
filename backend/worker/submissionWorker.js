@@ -11,6 +11,7 @@ const runJavaScript = require("../docker/runJavaScript");
 const runCpp = require("../docker/runCpp");
 const cache = require("../config/redis");
 const gracefulShutdown = require("../utils/gracefulShutdown");
+const workerConcurrency = require("../utils/workerConcurrency");
 const { canAnalyze, analyzeFailure } = require("./counterexampleAnalysis");
 const { canMeasure } = require("../problemkit/complexity");
 const analysisQueue = require("../queue/analysisQueue");
@@ -222,7 +223,7 @@ if (require.main === module) {
   const worker = new Worker(
     "submission-queue",
     processSubmission,
-    { connection, metrics: { collect: false }, }
+    { connection, concurrency: workerConcurrency(), metrics: { collect: false }, }
   );
 
   // A submission can run many test cases, so allow longer than the API's 10s

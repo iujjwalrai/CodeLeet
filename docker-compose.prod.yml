@@ -29,6 +29,7 @@ x-prod-worker: &prod-worker
   environment:
     <<: *prod-env
     CODE_TMP_DIR: ${CODE_TMP_DIR:-/var/lib/codeleet/jobs}
+    WORKER_CONCURRENCY: ${WORKER_CONCURRENCY:-1}
     # Sandboxes are versioned with the app
     SANDBOX_IMAGE_CPP: ${REGISTRY:-ghcr.io/iujjwalrai}/codeleet-cpp:${TAG:-latest}
     SANDBOX_IMAGE_JAVA: ${REGISTRY:-ghcr.io/iujjwalrai}/codeleet-java:${TAG:-latest}
@@ -70,7 +71,7 @@ services:
       redis:
         condition: service_healthy
     deploy:
-      # Keep at 1 until nginx re-resolves replicas (ISSUES #6, Phase 2)
+      # The gateway spreads requests across replicas (client/nginx.conf)
       replicas: ${API_REPLICAS:-1}
       resources:
         limits: { cpus: "0.5", memory: 512M }

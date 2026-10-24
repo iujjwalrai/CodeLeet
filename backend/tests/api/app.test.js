@@ -7,6 +7,7 @@ describe('app', () => {
 
     expect(res.status).toBe(200);
     expect(res.body.status).toBe('ok');
+    expect(res.body.instance).toBe(require('os').hostname());
     expect(new Date(res.body.timestamp).toString()).not.toBe('Invalid Date');
   });
 
