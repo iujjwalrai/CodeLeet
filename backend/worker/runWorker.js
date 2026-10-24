@@ -8,17 +8,16 @@ const runJavaScript = require("../docker/runJavaScript");
 const runCpp = require("../docker/runCpp");
 const cache = require("../config/redis"); // separate client for SET commands
 const gracefulShutdown = require("../utils/gracefulShutdown");
+const { canAnalyze, analyzeFailure } = require("./counterexampleAnalysis");
 
 async function publishJobUpdate(jobId, data) {
   const payload = JSON.stringify({ jobId, data });
   const channel = `job-updates:${jobId}`;
-  // Cache latest status for 60s so late WebSocket subscribers can replay it
-  await cache.set(`job-cache:${channel}`, payload, "EX", 60);
-  connectionPubSub.publish(channel, payload);
+  // Pending analysis gets a longer replay window; completed data uses 60s.
+  await cache.set(`job-cache:${channel}`, payload, "EX", data.analysisPending ? 180 : 60);
+  await connectionPubSub.publish(channel, payload);
 }
-const worker = new Worker(
-  "run-queue",
-  async (job) => {
+async function processRun(job) {
     const { code, language, input, problemId, problem } = job.data;
 
     console.log("Run worker started for job:", job.id);
@@ -76,8 +75,10 @@ const worker = new Worker(
         time: result.time || 0,
         memory: result.memory || 0,
       });
-      publishJobUpdate(job.id, {
+      const analysisPending = canAnalyze(problem, language, result);
+      await publishJobUpdate(job.id, {
         status: result.status,
+        analysisPending,
         passedCount: result.passedCount,
         totalCount: result.totalCount,
         failedTestCase: result.failedTestCase,
@@ -88,6 +89,13 @@ const worker = new Worker(
         memory: result.memory || 0,
         resources: result.resources || null,
       });
+      if (analysisPending) {
+        try {
+          await analyzeFailure({ jobId: job.id, channel: `job-updates:${job.id}`, problem, code, language, result });
+        } catch {
+          console.error('Unable to publish counterexample analysis');
+        }
+      }
       return {
         status: result.status,
         passedCount: result.passedCount,
@@ -118,14 +126,17 @@ const worker = new Worker(
         memory: 0,
       };
     }
-  },
-  { connection, metrics: { collect: false }, }
-);
+}
 
-// Let the current run finish before exiting (see submissionWorker.js).
-gracefulShutdown("run-worker", async () => {
-  await worker.close();
-  await Promise.allSettled([connection.quit(), connectionPubSub.quit()]);
-}, { timeoutMs: process.env.SHUTDOWN_TIMEOUT_MS || 30000 });
+if (require.main === module) {
+  const worker = new Worker("run-queue", processRun, { connection, metrics: { collect: false } });
+  // Let the current run finish before exiting (see submissionWorker.js).
+  gracefulShutdown("run-worker", async () => {
+    await worker.close();
+    await Promise.allSettled([connection.quit(), connectionPubSub.quit()]);
+  }, { timeoutMs: process.env.SHUTDOWN_TIMEOUT_MS || 30000 });
 
-console.log("Run worker is listening...");
+  console.log("Run worker is listening...");
+}
+
+module.exports = { processRun };

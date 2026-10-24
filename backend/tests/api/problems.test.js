@@ -97,12 +97,13 @@ describe('private problem fields', () => {
   // Test cases (hidden ones included) and driver code are for judging only
   const expectNoPrivateFields = (problem) => {
     expect(problem.testCases).toBeUndefined();
+    expect(problem.analysisTools).toBeUndefined();
     expect(problem.codeTemplates.python).toEqual({ starter: 'def solve(): pass' });
     expect(problem.codeTemplates.cpp).toEqual({ starter: 'int solve();' });
   };
 
   it('leaves test cases and drivers out of the problem page', async () => {
-    await createProblem({ slug: 'two-sum' });
+    await createProblem({ slug: 'two-sum', analysisTools: { generator: 'SECRET GENERATOR', reference: 'SECRET REFERENCE' } });
 
     const res = await request(app).get('/api/problems/two-sum');
 
@@ -110,7 +111,7 @@ describe('private problem fields', () => {
   });
 
   it('leaves test cases and drivers out of the problem list', async () => {
-    await createProblem();
+    await createProblem({ analysisTools: { generator: 'SECRET GENERATOR', reference: 'SECRET REFERENCE' } });
 
     const res = await request(app).get('/api/problems');
 
@@ -118,17 +119,27 @@ describe('private problem fields', () => {
   });
 
   it('still loads them for judging', async () => {
-    const created = await createProblem();
+    const created = await createProblem({ analysisTools: { generator: 'g', reference: 'r' } });
 
     const problem = await Problem.findById(created._id).select(Problem.JUDGING_FIELDS);
 
     expect(problem.testCases).toHaveLength(2);
     expect(problem.codeTemplates.cpp.driver).toBe('int main(){}');
+    expect(problem.analysisTools).toEqual({ generator: 'g', reference: 'r' });
   });
 });
 
 describe('POST /api/problems', () => {
   const body = { title: 'New One', slug: 'New-One', difficulty: 'Medium', description: 'Do the thing' };
+
+  it('does not echo private analysis source from an admin create response', async () => {
+    const admin = await createUser({ role: 'admin' });
+    const res = await request(app).post('/api/problems').set('Authorization', authFor(admin).bearer)
+      .send({ ...body, analysisTools: { reference: 'SECRET', generator: 'SECRET' } });
+    expect(res.status).toBe(201);
+    expect(res.body.analysisTools).toBeUndefined();
+    expect(JSON.stringify(res.body)).not.toContain('SECRET');
+  });
 
   it('lets admins create problems and lowercases the slug', async () => {
     const admin = await createUser({ role: 'admin' });

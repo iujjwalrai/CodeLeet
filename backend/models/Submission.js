@@ -84,6 +84,8 @@ const submissionSchema = new mongoose.Schema(
 
     analysis: {
       resources: resourcesSchema,
+      // Only the public search result, never generator/reference source.
+      counterexample: mongoose.Schema.Types.Mixed,
     },
   },
   {

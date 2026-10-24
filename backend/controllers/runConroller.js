@@ -15,7 +15,7 @@ const runCode = async (req, res) => {
     if (!problem) {
       return res.status(404).json({ message: 'Problem not found' });
     }
-    const prob = {codeTemplates: problem.codeTemplates, testCases: problem.testCases, timeLimitMs: problem.timeLimitMs};
+    const prob = {codeTemplates: problem.codeTemplates, testCases: problem.testCases, timeLimitMs: problem.timeLimitMs, analysisTools: problem.analysisTools};
     const job = await runQueue.add(
       'run-code',
       {

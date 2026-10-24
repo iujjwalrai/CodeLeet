@@ -30,6 +30,12 @@ describe('buildProblem', () => {
     ]);
     expect(doc).toMatchObject({ slug: 'double-it', title: 'Double It', timeLimitMs: 1000 });
     expect(doc.codeTemplates.cpp.driver).toContain('#include "Solution.cpp"');
+    expect(doc.analysisTools).toMatchObject({
+      generator: expect.stringContaining('void generate'),
+      reference: expect.stringContaining('class Solution'),
+      signature: { name: 'twice' },
+      minN: 10, step: 1, generations: [{ index: 2, n: 10, seed: 1 }],
+    });
     expect(summary).toMatchObject({ tests: 3, generated: 1, cppMs: 5, javaMs: null });
 
     // generator twice (determinism), then the C++ reference

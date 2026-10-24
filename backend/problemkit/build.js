@@ -2,6 +2,7 @@ const { cppJob } = require("../docker/runCpp");
 const { javaJob } = require("../docker/runJava");
 const { checkGeneratedLine } = require("./types");
 const { generatorSource } = require("./codegen");
+const { buildAnalysisTools } = require("./counterexample");
 
 /*
  * Turns a loaded package (package.js) into a Problem document: generates the
@@ -120,7 +121,7 @@ async function buildProblem(pkg, { execute }) {
   }
 
   return {
-    doc: { ...pkg.meta, testCases, codeTemplates: pkg.templates },
+    doc: { ...pkg.meta, testCases, codeTemplates: pkg.templates, analysisTools: buildAnalysisTools(pkg) },
     summary: {
       tests: testCases.length,
       generated: gens.length,

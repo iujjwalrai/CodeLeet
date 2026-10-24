@@ -119,3 +119,41 @@ Call one `emit` per parameter, in order. All randomness must come from `rng`;
 the seed runs every generator twice and fails if the output differs. Using
 `seed % k` to pick between input shapes (all negative, a long chain and so
 on) keeps the tests varied.
+
+## Smaller failing inputs (Phase 3)
+
+Seeding also stores private `analysisTools`: the signature, generator, C++
+reference, and each generated test's `(index, n, seed)`. Like hidden tests,
+this field is `select: false`. Problem API responses and WebSocket messages
+never include trusted source. Existing database records need a validated
+re-seed to enable analysis; legacy records continue judging normally.
+
+After C++/Java Wrong Answer, Runtime Error, TLE or MLE, Run and Submit may
+search for a smaller reproducer. The verdict is sent first with
+`analysisPending: true`; a separate `{type: "ANALYSIS", status: ...}` event
+follows on the same channel. Submit saves the public search result at
+`analysis.counterexample`. Replay retains both the verdict and analysis.
+
+The search considers smaller known cases and regenerated inputs, preserving
+the failing generated test's seed. Its conservative floor is the smallest
+authored generator size; its step is the GCD of authored size differences
+(or 1 for a single size). Authors must generate valid problem inputs on that
+lattice within the authored range. This preserves odd-only generators
+without interpreting prose constraints. Sizes below the authored floor are
+deliberately not tried. No package format changes are required.
+
+This is a bounded search, not proof of a globally minimum counterexample or
+a monotone binary search. It tries at most eight candidates, caps small
+inputs/expected outputs at 4 KB, and budgets eight seconds of user execution
+across two independent runs per candidate. Problems with time limits above
+four seconds are skipped. Compilation (15 seconds per sandbox), generation
+(500 ms per candidate), reference runs, and Docker startup have separate
+limits, so total analysis time can be longer. Generator, reference, and user
+are compiled once each in separate sequential sandboxes; trusted source is
+never mounted into the untrusted user's container. A reported input must
+reproduce the original failure category twice under the original limits.
+
+Analysis finishes as `found`, `not_found`, `skipped`, or `error`; none changes
+the verdict. Accepted and compilation errors do not trigger it. The frontend
+keeps the stream open while analysis is pending and displays its result
+separately. Complexity fitting / a low-priority queue remains Phase 4.
