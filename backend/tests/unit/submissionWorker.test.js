@@ -72,6 +72,16 @@ describe('processSubmission', () => {
     expect(published().at(-1).data.resources).toBeNull();
   });
 
+  it("passes the problem's time limit to the runner", async () => {
+    runPython.mockResolvedValue({ status: 'accepted', output: 'ok', time: 1 });
+    const { job } = await jobFor();
+    job.data.problem.timeLimitMs = 500;
+
+    await processSubmission(job);
+
+    expect(runPython).toHaveBeenCalledWith(expect.objectContaining({ timeLimitMs: 500 }));
+  });
+
   it('saves the failing test case on wrong answer', async () => {
     runPython.mockResolvedValue({
       status: 'wrong_answer',

@@ -43,6 +43,8 @@ const problemSchema = new mongoose.Schema(
     constraints: [{ type: String }],
     examples: [exampleSchema],
     testCases: { type: [testCaseSchema], select: false },
+    // Wall time per test case; unset means the judge's default (docker/judge.js)
+    timeLimitMs: { type: Number, min: 100, max: 10000 },
 
     // 👇 MAIN CHANGE HERE
     codeTemplates: {

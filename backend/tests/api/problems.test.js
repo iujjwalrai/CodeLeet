@@ -64,6 +64,19 @@ describe('GET /api/problems', () => {
   });
 });
 
+describe('GET /api/problems/topics', () => {
+  it('lists the topics in use, in the order of problemkit/topics.json', async () => {
+    await createProblem({ topics: ['Graph', 'Array'] });
+    await createProblem({ topics: ['Array', 'Dynamic Programming'] });
+    await createProblem({ topics: ['legacy'] });
+
+    const res = await request(app).get('/api/problems/topics');
+
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual(['Array', 'Graph', 'Dynamic Programming', 'legacy']);
+  });
+});
+
 describe('GET /api/problems/:slug', () => {
   it('returns the problem', async () => {
     await createProblem({ slug: 'two-sum', title: 'Two Sum' });

@@ -1,5 +1,6 @@
 const { validationResult } = require('express-validator');
 const Problem = require('../models/Problem');
+const TOPICS = require('../problemkit/topics.json');
 
 const buildFilters = (query) => {
   const filters = {};
@@ -89,9 +90,23 @@ const createProblem = async (req, res) => {
   }
 };
 
+// Topics that at least one problem has, in the order of problemkit/topics.json
+const getTopics = async (req, res) => {
+  try {
+    const used = await Problem.distinct('topics');
+    const rank = (t) => (TOPICS.includes(t) ? TOPICS.indexOf(t) : TOPICS.length);
+    used.sort((a, b) => rank(a) - rank(b) || a.localeCompare(b));
+    res.json(used);
+  } catch (error) {
+    console.error('Get topics error:', error.message);
+    res.status(500).json({ message: 'Unable to load topics.' });
+  }
+};
+
 module.exports = {
   getProblems,
   getProblemBySlug,
+  getTopics,
   createProblem,
 };
 

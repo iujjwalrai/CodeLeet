@@ -38,6 +38,7 @@ const worker = new Worker(
         driverCode: template.driver,
         input: input || "",
         testCases: problem.testCases,
+        timeLimitMs: problem.timeLimitMs,
       };
       let result;
 

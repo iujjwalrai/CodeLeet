@@ -202,6 +202,19 @@ describe.each([
     });
   });
 
+  it("uses the problem's own time limit when it has one", async () => {
+    let conf;
+    fakeDocker((cmd) => {
+      conf = fs.readFileSync(path.join(cmd.match(/-v "([^"]+):\/app:ro"/)[1], 'job.conf'), 'utf8');
+      return meterReport(cmd, { test: () => ({ tle: true }) });
+    });
+
+    const result = await run({ ...input, timeLimitMs: 500 });
+
+    expect(conf).toContain('time_ms=500\n');
+    expect(result.error).toBe('Time limit exceeded on test case 1 (limit 500 ms)');
+  });
+
   it('returns memory_limit_exceeded when cl-meter, the JVM or the container\'s OOM killer stops the program', async () => {
     fakeDocker((cmd) => meterReport(cmd, { test: () => ({ mle: true, signal: 9, peakKb: 270000 }) }));
     await expect(run(input)).resolves.toMatchObject({ status: 'memory_limit_exceeded', error: 'Memory limit exceeded on test case 1 (limit 256 MB)' });
@@ -382,5 +395,15 @@ describe('runJavaScript', () => {
   // JavaScript run/submission fails. Flip to a normal `it` once it's implemented.
   it.failing('exports a runner function', () => {
     expect(typeof require('../../docker/runJavaScript')).toBe('function');
+  });
+});
+
+describe('runCpp', () => {
+  it('leaves out the include line g++ puts before errors in Solution.cpp', async () => {
+    fakeDocker((cmd) => meterReport(cmd, { compile: { ok: false, exit: 1, log: "In file included from Main.cpp:235:\nSolution.cpp: In member function 'int f()':\nSolution.cpp:4:3: error: no return\n" } }));
+
+    const result = await runCpp({ userCode: 'user code', driverCode: 'driver code', testCases });
+
+    expect(result.error).toBe("Solution.cpp: In member function 'int f()':\nSolution.cpp:4:3: error: no return");
   });
 });

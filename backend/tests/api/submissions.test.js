@@ -14,7 +14,7 @@ useTestDb();
 describe('POST /api/submissions', () => {
   it('stores an in_queue submission, bumps stats and enqueues the job', async () => {
     const user = await createUser();
-    const problem = await createProblem();
+    const problem = await createProblem({ timeLimitMs: 500 });
 
     const res = await request(app)
       .post('/api/submissions')
@@ -36,6 +36,7 @@ describe('POST /api/submissions', () => {
     expect(jobData.submissionId.toString()).toBe(submission._id.toString());
     expect(jobData.problem.testCases).toHaveLength(2);
     expect(jobData.problem.codeTemplates.python.driver).toBe('solve()');
+    expect(jobData.problem.timeLimitMs).toBe(500);
   });
 
   it('returns 400 when fields are missing', async () => {

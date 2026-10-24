@@ -6,3 +6,4 @@ dist-ssr
 .env.example
 coverage
 tmp/
+problems/

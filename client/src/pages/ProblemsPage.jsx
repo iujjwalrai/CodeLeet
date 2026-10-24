@@ -52,6 +52,7 @@ const ProblemsPage = () => {
   const [error, setError]         = useState(null);
   const [meta, setMeta]           = useState({ total: 0, page: 1, pages: 1 });
   const [statusMap, setStatusMap] = useState({});
+  const [topics, setTopics]       = useState([]);
 
   const navigate = useNavigate();
   const { user } = useAuth();
@@ -89,6 +90,12 @@ const ProblemsPage = () => {
     solved,
     attempted,
   };
+
+  useEffect(() => {
+    axios.get("/api/problems/topics")
+      .then((res) => setTopics(res.data))
+      .catch((err) => console.error("Failed to load topics", err));
+  }, []);
 
   useEffect(() => {
     const fetchProblems = async () => {
@@ -160,12 +167,7 @@ const ProblemsPage = () => {
 
           <select value={topic} onChange={e => { setTopic(e.target.value); setPage(1); }} className="field h-9 w-auto" aria-label="Topic">
             <option value="">All topics</option>
-            <option value="Arrays">Arrays</option>
-            <option value="Binary Search">Binary Search</option>
-            <option value="DP">Dynamic Programming</option>
-            <option value="Graphs">Graphs</option>
-            <option value="Stack">Stack</option>
-            <option value="BFS">BFS</option>
+            {topics.map((t) => <option key={t} value={t}>{t}</option>)}
           </select>
 
           {user && (
@@ -273,7 +275,7 @@ const Acceptance = ({ p }) => {
 
 const Topics = ({ p }) => (
   <div className="flex min-w-0 flex-wrap gap-1">
-    {topicsOf(p).slice(0, 2).map(t => <span key={t} className="badge badge-neutral capitalize">{t}</span>)}
+    {topicsOf(p).slice(0, 2).map(t => <span key={t} className="badge badge-neutral">{t}</span>)}
     {topicsOf(p).length === 0 && <span className="text-sm text-faint">—</span>}
   </div>
 );

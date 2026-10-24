@@ -17,7 +17,7 @@ const createSubmission = async (req, res) => {
     if (!problem) {
       return res.status(404).json({ message: 'Problem not found' });
     }
-    const prob = {codeTemplates: problem.codeTemplates, testCases: problem.testCases};
+    const prob = {codeTemplates: problem.codeTemplates, testCases: problem.testCases, timeLimitMs: problem.timeLimitMs};
 
     const submission = await Submission.create({
       user: req.user._id,
