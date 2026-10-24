@@ -98,6 +98,30 @@ describe('WebSocket job updates', () => {
     await close(ws);
   });
 
+  it('replays a verdict and its separate ANALYSIS event in order', async () => {
+    const verdict = { jobId: '19', data: { status: 'wrong_answer', analysisPending: true } };
+    const analysis = { jobId: '19', data: { type: 'ANALYSIS', status: 'found', input: '[1]' } };
+    cache.get.mockResolvedValueOnce(JSON.stringify(verdict)).mockResolvedValueOnce(JSON.stringify(analysis));
+    const { ws, messages } = await openClient();
+    ws.send(JSON.stringify({ type: 'RUN', jobId: '19' }));
+    await waitFor(() => messages.length === 2);
+    expect(messages).toEqual([verdict, analysis]);
+    await close(ws);
+  });
+
+  it('keeps RUN and SUBMIT analysis separate even when queue IDs overlap', async () => {
+    const a = await openClient(), b = await openClient();
+    a.ws.send(JSON.stringify({ type: 'RUN', jobId: '20' }));
+    b.ws.send(JSON.stringify({ type: 'SUBMIT', jobId: '20' }));
+    await waitFor(() => pubsub.subscribe.mock.calls.length === 2);
+    publish('job-updates:20', '20', { type: 'ANALYSIS', status: 'not_found' });
+    publish('job-updates-submission:20', '20', { type: 'ANALYSIS', status: 'found' });
+    await waitFor(() => a.messages.length === 1 && b.messages.length === 1);
+    expect(a.messages[0].data.status).toBe('not_found');
+    expect(b.messages[0].data.status).toBe('found');
+    await close(a.ws);await close(b.ws);
+  });
+
   it('ignores malformed and unknown messages', async () => {
     const { ws } = await openClient();
 

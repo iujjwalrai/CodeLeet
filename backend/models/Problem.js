@@ -43,6 +43,8 @@ const problemSchema = new mongoose.Schema(
     constraints: [{ type: String }],
     examples: [exampleSchema],
     testCases: { type: [testCaseSchema], select: false },
+    // Seeded trusted tools for finding smaller failures. Never public API data.
+    analysisTools: { type: mongoose.Schema.Types.Mixed, select: false },
     // Wall time per test case; unset means the judge's default (docker/judge.js)
     timeLimitMs: { type: Number, min: 100, max: 10000 },
 
@@ -76,6 +78,6 @@ const LANGUAGES = ["javascript", "python", "java", "cpp", "typescript"];
 const Problem = mongoose.model("Problem", problemSchema);
 
 // Projection that adds back the private fields needed to judge code
-Problem.JUDGING_FIELDS = ["+testCases", ...LANGUAGES.map((l) => `+codeTemplates.${l}.driver`)].join(" ");
+Problem.JUDGING_FIELDS = ["+testCases", "+analysisTools", ...LANGUAGES.map((l) => `+codeTemplates.${l}.driver`)].join(" ");
 
 module.exports = Problem;

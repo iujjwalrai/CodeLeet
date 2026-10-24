@@ -43,7 +43,7 @@ docker run --rm \
 `;
 }
 
-function writeJob(workDir, { files, compile, run, inputs, timeMs }) {
+function writeJob(workDir, { files, compile, run, inputs, timeMs, stopOnLimit = true }) {
   // The sandbox runs as nobody, so everything must be world-readable.
   fs.chmodSync(workDir, 0o755);
   for (const [name, content] of Object.entries(files)) {
@@ -63,7 +63,7 @@ function writeJob(workDir, { files, compile, run, inputs, timeMs }) {
     `time_ms=${timeMs}`,
     `mem_kb=${LIMITS.memKb}`,
     `compile_ms=${LIMITS.compileMs}`,
-    "stop_on_limit=1",
+    `stop_on_limit=${stopOnLimit ? 1 : 0}`,
   ].join("\n");
   fs.writeFileSync(path.join(workDir, "job.conf"), conf + "\n", { mode: 0o644 });
 }
@@ -190,7 +190,7 @@ function dockerRun(cmd, timeout) {
  * Returns cl-meter's report, or null when the program stopped cl-meter
  * before it could print one.
  */
-async function execute({ image, prefix, files, compile, run, inputs, timeMs = LIMITS.timeMs }) {
+async function execute({ image, prefix, files, compile, run, inputs, timeMs = LIMITS.timeMs, stopOnLimit = true }) {
   // Host path shared with the sandbox containers. When the worker itself runs in
   // Docker, mount the same host path at the same path inside it.
   const baseDir = process.env.CODE_TMP_DIR || path.join(process.cwd(), "tmp");
@@ -198,7 +198,7 @@ async function execute({ image, prefix, files, compile, run, inputs, timeMs = LI
   const workDir = fs.mkdtempSync(path.join(baseDir, `${prefix}-${uuidv4()}-`));
 
   try {
-    writeJob(workDir, { files, compile, run, inputs, timeMs });
+    writeJob(workDir, { files, compile, run, inputs, timeMs, stopOnLimit });
     const timeout = LIMITS.compileMs + inputs.length * (timeMs + 1000) + 15000;
     const { stdout, exitCode } = await dockerRun(sandboxCommand(image, workDir), timeout);
     if (exitCode === 2) throw new Error("Judge could not read its job configuration");

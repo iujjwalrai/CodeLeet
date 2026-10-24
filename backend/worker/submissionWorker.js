@@ -11,6 +11,7 @@ const runJavaScript = require("../docker/runJavaScript");
 const runCpp = require("../docker/runCpp");
 const cache = require("../config/redis");
 const gracefulShutdown = require("../utils/gracefulShutdown");
+const { canAnalyze, analyzeFailure } = require("./counterexampleAnalysis");
 
 // Statuses the Submission model can store; anything else (e.g. "error") is
 // only published, as before.
@@ -26,8 +27,8 @@ const FINAL_STATUSES = new Set([
 async function publishJobUpdate(jobId, data) {
   const payload = JSON.stringify({ jobId, data });
   const channel = `job-updates-submission:${jobId}`;
-  await cache.set(`job-cache:${channel}`, payload, "EX", 60);
-  connectionPubSub.publish(channel, payload);
+  await cache.set(`job-cache:${channel}`, payload, "EX", data.analysisPending ? 180 : 60);
+  await connectionPubSub.publish(channel, payload);
 }
 
 // Saved here rather than in the WebSocket server so the verdict is stored
@@ -129,10 +130,12 @@ async function processSubmission(job) {
       // update already sees the stored verdict.
       await saveVerdict(submissionId, result);
 
-      publishJobUpdate(job.id, {
+      const analysisPending = canAnalyze(problem, language, result);
+      await publishJobUpdate(job.id, {
         type: "SUBMIT",
         submissionId,
         status: result.status,
+        analysisPending,
         passedCount: result.passedCount,
         totalCount: result.totalCount,
         failedTestCase: result.failedTestCase,
@@ -143,6 +146,19 @@ async function processSubmission(job) {
         memory: result.memory || 0,
         resources: result.resources || null,
       });
+      if (analysisPending) {
+        try {
+          await analyzeFailure({
+            jobId: job.id, channel: `job-updates-submission:${job.id}`,
+            problem, code, language, result,
+            save: counterexample => Submission.updateOne(
+              { _id: submissionId }, { $set: { 'analysis.counterexample': counterexample } }
+            ),
+          });
+        } catch {
+          console.error('Unable to publish counterexample analysis');
+        }
+      }
       return {
         type: "SUBMIT",
         submissionId,

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from "react";
+import React, { useState, useEffect, useMemo, useRef } from "react";
 import {
   Play, Send, Clock, ChevronLeft, Check, X, RotateCcw, FileText, History, FlaskConical,
   Terminal, AlertTriangle,
@@ -6,11 +6,12 @@ import {
 import Editor from "@monaco-editor/react";
 import { Panel, PanelGroup, PanelResizeHandle } from "react-resizable-panels";
 import axios from "../api/axios";
-import { wsUrl } from "../api/urls";
+import { subscribeToJudge } from "../api/judgeStream";
 import { useLocation, useNavigate } from "react-router-dom";
 import LogoutButton from "../components/Logout";
 import { Logo, ThemeToggle } from "../components/Navbar";
 import ResourceTimeline from "../components/ResourceTimeline";
+import Counterexample from "../components/Counterexample";
 import { useAuth } from "../context/AuthContext";
 import { useTheme } from "../theme";
 import toast from "react-hot-toast";
@@ -132,6 +133,10 @@ const ProblemPage = ({ problemId = "1" }) => {
   const [testResults, setTestResults] = useState([]);
   const [runStatus, setRunStatus] = useState(null);
   const [submitData, setSubmitData] = useState(null);
+  const [runAnalysis, setRunAnalysis] = useState(null);
+  const [runAnalysisPending, setRunAnalysisPending] = useState(false);
+  const runStream = useRef(null);
+  const submitStream = useRef(null);
   const [timer, setTimer] = useState(0);
   const [isTimerRunning, setIsTimerRunning] = useState(false);
   const [customInput] = useState("");
@@ -143,6 +148,11 @@ const ProblemPage = ({ problemId = "1" }) => {
   const [error, setError] = useState(null);
 
   const navigate = useNavigate();
+
+  useEffect(() => () => {
+    runStream.current?.();
+    submitStream.current?.();
+  }, [problem?._id]);
 
   useEffect(() => {
     const fetchProblem = async () => {
@@ -220,6 +230,9 @@ const ProblemPage = ({ problemId = "1" }) => {
   };
 
   const handleRun = async () => {
+    runStream.current?.();
+    setRunAnalysis(null);
+    setRunAnalysisPending(false);
     // Show the running state straight away and clear the previous result
     setRunStatus("Running");
     setTestResults([]);
@@ -227,36 +240,33 @@ const ProblemPage = ({ problemId = "1" }) => {
       console.log({ problemId: problem._id, language, code, customInput });
       const response = await axios.post("/api/submissions/run", { problemId: problem._id, language, code, customInput });
       console.log(response.data);
-      const ws = new WebSocket(wsUrl());
-      ws.onopen = () => { ws.send(JSON.stringify({ type: "RUN", jobId: response.data.jobId })); };
-      console.log("subscribed");
-      ws.onerror = () => { setRunStatus(null); toast.error("Lost connection to the judge."); };
-      ws.onmessage = (event) => {
-        const msg = JSON.parse(event.data);
-        console.log("WebSocket message:", msg);
-        const data = msg.data;
+      runStream.current = subscribeToJudge({
+        type: 'RUN', jobId: response.data.jobId,
+        onError: () => { setRunStatus(null); toast.error('Lost connection to the judge.'); },
+        onAnalysis: data => { setRunAnalysis(data); setRunAnalysisPending(false); },
+        onVerdict: data => {
+        setRunAnalysisPending(!!data.analysisPending);
         setRunStatus(data.status);
         if (data.status === "accepted") {
           setTestResults([{ type: "accepted", passedCount: data.passedCount ?? data.totalCount, totalCount: data.totalCount, time: `${data.time} ms`, resources: data.resources }]);
-          ws.close(); return;
+          return;
         }
         if (data.status === "wrong_answer") {
           setTestResults([{ type: "wrong_answer", passedCount: data.passedCount ?? 0, totalCount: data.totalCount ?? 0, failedIndex: (data.failedTestCaseIndex ?? 0) + 1, input: data.failedTestCase?.input || "—", expected: data.failedTestCase?.output || "—", output: data.output || "—", time: `${data.time} ms`, resources: data.resources }]);
-          ws.close(); return;
+          return;
         }
         if (data.status === "compilation_error") {
           setTestResults([{ type: "compilation_error", error: data.error, time: `${data.time} ms` }]);
-          ws.close(); return;
+          return;
         }
         if (["runtime_error", "time_limit_exceeded", "memory_limit_exceeded"].includes(data.status)) {
           setTestResults([{ type: data.status, error: data.error, time: `${data.time} ms`, resources: data.resources }]);
-          ws.close(); return;
+          return;
         }
         if (data.status === "error") {
           setTestResults([{ type: "error", error: data.error || "The judge failed to run this code.", time: `${data.time ?? 0} ms` }]);
-          ws.close();
         }
-      };
+      }});
     } catch {
       setRunStatus(null);
       toast.error("Failed to run code. Please try again.");
@@ -264,6 +274,7 @@ const ProblemPage = ({ problemId = "1" }) => {
   };
 
   const handleSubmit = async () => {
+    submitStream.current?.();
     // Switch to the Result tab immediately and show a pending verdict
     setSubmitData({ status: "pending" });
     setActiveTab("result");
@@ -271,20 +282,21 @@ const ProblemPage = ({ problemId = "1" }) => {
       console.log({ problemId: problem._id, language, code });
       const response = await axios.post("/api/submissions/", { problemId: problem._id, language, code });
       console.log(response.data);
-      const ws = new WebSocket(wsUrl());
-      ws.onopen = () => { ws.send(JSON.stringify({ type: "SUBMIT", jobId: response.data.jobId })); };
-      console.log("subscribed for submission");
-      ws.onerror = () => { setSubmitData(null); toast.error("Lost connection to the judge."); };
-      ws.onmessage = (event) => {
-        const msg = JSON.parse(event.data);
-        setSubmitData(msg.data);
-        if (FINAL_STATUSES.includes(msg.data.status)) {
-          if (msg.data.status === "accepted") toast.success("Submission accepted");
-          else toast.error(labelOf(msg.data.status));
+      let liveSubmissionId;
+      submitStream.current = subscribeToJudge({
+        type: 'SUBMIT', jobId: response.data.jobId,
+        onError: () => { setSubmitData(null); toast.error('Lost connection to the judge.'); },
+        onAnalysis: data => setSubmitData(current => current?.submissionId === liveSubmissionId
+          ? { ...current, counterexample: data, analysisPending: false } : current),
+        onVerdict: data => {
+        liveSubmissionId = data.submissionId;
+        setSubmitData(data);
+        if (FINAL_STATUSES.includes(data.status)) {
+          if (data.status === "accepted") toast.success("Submission accepted");
+          else toast.error(labelOf(data.status));
           setActiveTab("result");
-          ws.close();
         }
-      };
+      }});
     } catch {
       setSubmitData(null);
       toast.error("Submission failed. Please try again.");
@@ -460,6 +472,7 @@ const ProblemPage = ({ problemId = "1" }) => {
               )}
 
               <ResourceTimeline resources={submitData.resources ?? submitData.analysis?.resources} />
+              <Counterexample analysis={submitData.counterexample ?? submitData.analysis?.counterexample} pending={submitData.analysisPending} />
             </div>
           )}
         </>}
@@ -560,6 +573,7 @@ const ProblemPage = ({ problemId = "1" }) => {
             </div>
           );
         })}
+        <Counterexample analysis={runAnalysis} pending={runAnalysisPending} />
       </div>
     </div>
   );

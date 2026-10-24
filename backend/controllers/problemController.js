@@ -83,7 +83,8 @@ const createProblem = async (req, res) => {
     };
 
     const problem = await Problem.create(payload);
-    res.status(201).json(problem);
+    // create() returns private fields too; re-read with the public projection.
+    res.status(201).json(await Problem.findById(problem._id));
   } catch (error) {
     console.error('Create problem error:', error.message);
     res.status(500).json({ message: 'Unable to create problem.' });
