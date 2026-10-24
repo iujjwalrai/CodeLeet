@@ -8,6 +8,7 @@ const runJavaScript = require("../docker/runJavaScript");
 const runCpp = require("../docker/runCpp");
 const cache = require("../config/redis"); // separate client for SET commands
 const gracefulShutdown = require("../utils/gracefulShutdown");
+const workerConcurrency = require("../utils/workerConcurrency");
 const { canAnalyze, analyzeFailure } = require("./counterexampleAnalysis");
 
 async function publishJobUpdate(jobId, data) {
@@ -129,7 +130,7 @@ async function processRun(job) {
 }
 
 if (require.main === module) {
-  const worker = new Worker("run-queue", processRun, { connection, metrics: { collect: false } });
+  const worker = new Worker("run-queue", processRun, { connection, concurrency: workerConcurrency(), metrics: { collect: false } });
   // Let the current run finish before exiting (see submissionWorker.js).
   gracefulShutdown("run-worker", async () => {
     await worker.close();

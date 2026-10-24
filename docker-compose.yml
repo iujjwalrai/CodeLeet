@@ -21,6 +21,9 @@ x-worker: &worker
   environment:
     <<: *backend-env
     CODE_TMP_DIR: ${CODE_TMP_DIR:-/tmp/codeleet-jobs}
+    # Jobs per submission/run worker at once; each starts a 1-CPU sandbox, so
+    # replicas × this should stay within the machine's cores
+    WORKER_CONCURRENCY: ${WORKER_CONCURRENCY:-1}
   volumes:
     # Lets the worker start sandbox containers on the host's Docker daemon
     - /var/run/docker.sock:/var/run/docker.sock
