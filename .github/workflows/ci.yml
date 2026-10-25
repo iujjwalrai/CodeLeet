@@ -1,4 +1,4 @@
-name: CI
+name: CI/CD
 
 on:
   push:
@@ -19,7 +19,7 @@ concurrency:
 jobs:
 
   docker:
-    name: Docker Build
+    name: CI-Docker Build
     runs-on: ubuntu-latest
   
     env:
@@ -35,7 +35,7 @@ jobs:
         run: docker run --rm --add-host api:127.0.0.1 codeleet-gateway nginx -t
 
   backend:
-    name: Backend
+    name: CI-Backend
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -63,7 +63,7 @@ jobs:
   
 
   frontend:
-    name: Frontend
+    name: CI-Frontend
     runs-on: ubuntu-latest
     defaults:
       run:

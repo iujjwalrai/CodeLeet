@@ -15,7 +15,7 @@ concurrency:
 
 jobs:
   publish:
-    name: ${{ matrix.name }}
+    name: CI-${{ matrix.name }}
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false

@@ -34,7 +34,7 @@ concurrency:
 
 jobs:
   deploy:
-    name: Deploy to production
+    name: CD-Deploy to production
     runs-on: ubuntu-latest
     environment: production
     env:
