@@ -195,7 +195,6 @@ const Home = () => {
       <footer className="border-t border-line">
         <div className="mx-auto flex max-w-6xl flex-col gap-3 px-4 py-8 sm:flex-row sm:items-center sm:justify-between sm:px-6">
           <Logo small />
-          <p className="text-sm text-faint">Open source · MIT licensed</p>
         </div>
       </footer>
     </div>
