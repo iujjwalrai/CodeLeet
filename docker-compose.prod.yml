@@ -15,6 +15,10 @@
 x-prod-env: &prod-env
   MONGODB_URI: ${MONGODB_URI:?set MONGODB_URI (MongoDB Atlas) in .env}
   FRONTEND_URL: ${FRONTEND_URL:?set FRONTEND_URL (e.g. https://codeleet.me) in .env}
+  # The server has no IPv6. By default Node tries IPv6 and IPv4 addresses in
+  # turn, 250 ms each, and connections to Google (sign-in) all time out.
+  # Connect to IPv4 addresses instead, with the system's normal timeout.
+  NODE_OPTIONS: --dns-result-order=ipv4first --no-network-family-autoselection
 
 # Rotate container logs so they can't fill the server's disk
 x-logging: &logging
