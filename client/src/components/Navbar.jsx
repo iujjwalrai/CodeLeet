@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react'
 import { motion, AnimatePresence, useMotionValue, useSpring } from "framer-motion";
-import { Code2, Menu, Moon, Search, Sun, X } from "lucide-react";
+import { Menu, Moon, Search, Sun, X } from "lucide-react";
 import { useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { useTheme } from '../theme';
@@ -8,11 +8,13 @@ import CommandPalette from './CommandPalette';
 
 const isMac = typeof navigator !== "undefined" && /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent);
 
+// Same mark as the favicon in index.html; the border keeps it visible in dark mode
 export const Logo = ({ small = false }) => (
   <span className="flex items-center gap-2">
-    <span className={`flex items-center justify-center rounded-lg bg-accent text-accent-fg ${small ? "h-6 w-6" : "h-7 w-7"}`}>
-      <Code2 size={small ? 14 : 16} strokeWidth={2.5} />
-    </span>
+    <svg viewBox="0 0 32 32" aria-hidden="true" className={small ? "h-6 w-6" : "h-7 w-7"}>
+      <rect x="0.5" y="0.5" width="31" height="31" rx="7.5" fill="#0b1210" stroke="#3f3f46" />
+      <path d="M8 10.5l5.5 5.5-5.5 5.5M16 22h8" fill="none" stroke="#10b981" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
     <span className={`font-semibold tracking-tight text-fg ${small ? "text-sm" : "text-[15px]"}`}>CodeLeet</span>
   </span>
 );
